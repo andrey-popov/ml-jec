@@ -31,7 +31,7 @@ def run_task(config_path):
     stdout = open(os.path.join(dir_name, 'train.stdout'), 'w')
     stderr = open(os.path.join(dir_name, 'train.stderr'), 'w')
     subprocess.run(
-        ['./train.py', config_path, '-o', dir_name],
+        ['train.py', config_path, '-o', dir_name],
         stdout=stdout, stderr=stderr
     )
     stdout.close()
