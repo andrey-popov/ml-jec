@@ -1,0 +1,24 @@
+run:
+  name: baseline
+  storage: gs://rainfinder-mljec-200625/results
+
+data:
+  location: gs://rainfinder-mljec-200625/data
+  split: [100, 2, -1]
+  batch_size: 128
+
+model:
+  type: plain
+  num_layers: 10
+  num_units: 512
+
+loss: huber
+
+optimizer:
+  learning_rate: 5.e-4
+
+train:
+  steps_per_epoch: 1000
+  min_delta: 5.e-5
+
+predict: true
