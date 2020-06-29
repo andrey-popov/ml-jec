@@ -28,6 +28,12 @@ def build_model(config, num_features):
             dropout=model_config.get('dropout', 0),
             num_features=num_features
         )
+    elif model_type == 'resnet':
+        model = _build_model_resnet(
+            num_layers=model_config['num_layers'],
+            num_units=model_config['num_units'],
+            num_features=num_features
+        )
     else:
         raise RuntimeError(f'Unknown model type "{model_type}".')
 
@@ -75,6 +81,42 @@ def _build_model_plain(
         model.add(layers.Activation('relu'))
         if dropout > 0 and i != 0:
             model.add(layers.Dropout(dropout))
-    model.add(layers.Dense(1))
+    model.add(layers.Dense(1, kernel_initializer='he_uniform'))
     return model
 
+
+def _build_model_resnet(
+    num_layers=5, num_units=256, num_features=None
+):
+    """Construct a ResNet.
+
+    Args:
+        num_layers:  Number of ResNet blocks.  Each block includes two
+            sublayers with non-linearities.
+        num_units:  Number of units in each hidden layer.
+        num_features:  Optional number of input features.
+    """
+
+    inputs = tf.keras.Input(shape=(num_features,))
+
+    # The first layer is special in that it includes a projection for
+    # the inputs in order to match the dimensions
+    x = layers.Dense(
+        num_units, kernel_initializer='he_uniform', use_bias=False
+    )(inputs)
+    y = layers.Dense(num_units, kernel_initializer='he_uniform')(x)
+    y = layers.Activation('relu')(y)
+    y = layers.Dense(num_units, kernel_initializer='he_uniform')(y)
+    y = layers.Add()([x, y])
+    x = layers.Activation('relu')(y)
+
+    for _ in range(num_layers - 1):
+        y = layers.Dense(num_units, kernel_initializer='he_uniform')(x)
+        y = layers.Activation('relu')(y)
+        y = layers.Dense(num_units, kernel_initializer='he_uniform')(y)
+        y = layers.Add()([x, y])
+        x = layers.Activation('relu')(y)
+
+    output = layers.Dense(1, kernel_initializer='he_uniform')(x)
+    model = tf.keras.Model(inputs=inputs, outputs=output)
+    return model
