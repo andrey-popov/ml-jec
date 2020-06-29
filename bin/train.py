@@ -59,7 +59,8 @@ def train(
             ),
             tf.keras.callbacks.TensorBoard(
                 log_dir=os.path.join(output_dir, 'logs'),
-                write_graph=False, histogram_freq=1, profile_batch=10
+                write_graph=False, histogram_freq=1,
+                profile_batch='500,520'
             )
         ]
     )
