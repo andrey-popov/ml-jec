@@ -72,6 +72,10 @@ if __name__ == '__main__':
     arg_parser.add_argument(
         '-o', '--output', default='', help='Directory to store output.'
     )
+    arg_parser.add_argument(
+        '--plot-model', action='store_true',
+        help='Request a plot of the model. Requires graphviz and pydot.'
+    )
     args = arg_parser.parse_args()
 
     try:
@@ -89,6 +93,10 @@ if __name__ == '__main__':
 
     model = build_model(config, len(metadata['features']))
     print(model.summary())
+    if args.plot_model:
+        tf.keras.utils.plot_model(
+            model, os.path.join(args.output, 'model.png'), dpi=300
+        )
 
     history = train(
         config, model,
@@ -109,4 +117,3 @@ if __name__ == '__main__':
     if config['predict']:
         predictions = model.predict(test_dataset)
         np.save(os.path.join(args.output, 'prediction.npy'), predictions[:, 0])
-
