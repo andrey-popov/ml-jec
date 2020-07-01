@@ -42,27 +42,38 @@ def train(
         max_epochs = math.ceil(
             10 * train_dataset_size / (steps_per_epoch * batch_size))
 
-    min_delta = config['train']['min_delta']
+    lr = config['train'].get('learning_rate', None)
+    if lr is not None:
+        model.optimizer.lr.assign(lr)
+
+    callbacks = [
+        tf.keras.callbacks.ModelCheckpoint(
+            os.path.join(output_dir, 'model'),
+            save_best_only=True
+        ),
+        tf.keras.callbacks.TensorBoard(
+            log_dir=os.path.join(output_dir, 'logs'),
+            write_graph=False, histogram_freq=1,
+            profile_batch='500,520'
+        )
+    ]
+    if 'reduce_lr_on_plateau' in config['train']:
+        c = config['train']['reduce_lr_on_plateau']
+        callbacks.append(tf.keras.callbacks.ReduceLROnPlateau(
+            factor=c['factor'], patience=c['patience'],
+            min_delta=c['min_delta'], min_lr=c.get('min_lr', 0),
+            verbose=1
+        ))
+    if 'early_stopping' in config['train']:
+        c = config['train']['early_stopping']
+        callbacks.append(tf.keras.callbacks.EarlyStopping(
+            patience=c['patience'], min_delta=c['min_delta'],
+            verbose=1
+        ))
+
     history = model.fit(
         train_dataset, steps_per_epoch=steps_per_epoch, epochs=max_epochs,
-        validation_data=val_dataset,
-        callbacks=[
-            tf.keras.callbacks.ReduceLROnPlateau(
-                factor=0.2, patience=10, min_delta=min_delta, verbose=1
-            ),
-            tf.keras.callbacks.EarlyStopping(
-                patience=15, min_delta=min_delta, verbose=1
-            ),
-            tf.keras.callbacks.ModelCheckpoint(
-                os.path.join(output_dir, 'model'),
-                save_best_only=True
-            ),
-            tf.keras.callbacks.TensorBoard(
-                log_dir=os.path.join(output_dir, 'logs'),
-                write_graph=False, histogram_freq=1,
-                profile_batch='500,520'
-            )
-        ]
+        validation_data=val_dataset, callbacks=callbacks
     )
     return history.history
 

@@ -19,6 +19,10 @@ def build_model(config, num_features):
     """
 
     model_config = config['model']
+    if isinstance(model_config, str):
+        model = tf.keras.models.load_model(model_config)
+        return model
+
     model_type = model_config['type']
     if model_type == 'plain':
         model = _build_model_plain(
@@ -37,15 +41,12 @@ def build_model(config, num_features):
     else:
         raise RuntimeError(f'Unknown model type "{model_type}".')
 
-    optimizer = tf.keras.optimizers.Adam(
-        learning_rate=config['optimizer'].get('learning_rate', 1e-3)
-    )
     if config['loss'] == 'huber':
         loss = tf.keras.losses.Huber(math.log(2))
     else:
         loss = config['loss']
 
-    model.compile(optimizer, loss=loss)
+    model.compile('adam', loss=loss)
     return model
 
 
