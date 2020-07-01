@@ -20,9 +20,11 @@ import yaml
 def run_task(config_path):
     with open(config_path) as f:
         config = yaml.safe_load(f)
-    dir_name = '{:%Y%m%dT%H%M%S}_{}'.format(
-        datetime.now(), config['run']['name']
-    )
+    try:
+        run_name = config['run']['name']
+    except KeyError:
+        run_name = os.path.splitext(os.path.basename(config_path))[0]
+    dir_name = '{:%Y%m%dT%H%M%S}_{}'.format(datetime.now(), run_name)
     destination = os.path.join(config['run']['storage'], dir_name)
 
     os.makedirs(dir_name)
