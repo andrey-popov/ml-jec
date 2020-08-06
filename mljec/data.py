@@ -181,8 +181,9 @@ def _read_root_file(path, branches):
     """Read a single ROOT file.
 
     Args:
-        path:  NumPy array with the path the file.
-        branches:  NumPy array with branches to be read.
+        path:  Path the file represented as bytes.
+        branches:  NumPy array with branches to be read.  The branches
+            are represented as bytes.
 
     Return:
         List of NumPy arrays for each specified branch.  The order
@@ -195,6 +196,7 @@ def _read_root_file(path, branches):
     return [data[name].astype(np.float32) for name in branches]
 
 
+@tf.function(input_signature=[tf.TensorSpec((), dtype=tf.string)])
 def _read_root_file_wrapper(path):
     """Wrapper around _read_root_file.
 

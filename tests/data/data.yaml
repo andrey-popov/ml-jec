@@ -1,0 +1,10 @@
+- path: shards/1.root
+  counts: 10
+- path: shards/2.root
+  counts: 10
+- path: shards/3.root
+  counts: 10
+- path: shards/4.root
+  counts: 10
+- path: shards/5.root
+  counts: 10
