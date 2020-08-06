@@ -19,10 +19,13 @@ def build_datasets(config):
 
     config = config['data']
 
-    data_dir = os.path.join(config['location'], 'data')
+    with tf.io.gfile.GFile(
+        os.path.join(config['location'], 'data.yaml')
+    ) as f:
+        data_file_infos = yaml.safe_load(f.read())
     data_files = [
-        os.path.join(data_dir, filename)
-        for filename in sorted(tf.io.gfile.listdir(data_dir))
+        os.path.join(config['location'], c['path'])
+        for c in data_file_infos
     ]
 
     with tf.io.gfile.GFile(
@@ -41,9 +44,7 @@ def build_datasets(config):
 
     splits = _find_splits(config['split'], len(data_files))
     metadata = {}
-    metadata['counts'] = _count_examples(
-        os.path.join(config['location'], 'counts.yaml'), data_files, splits
-    )
+    metadata['counts'] = {}
     metadata['features'] = [info['feature'] for info in feature_infos]
 
     datasets = {}
@@ -57,6 +58,9 @@ def build_datasets(config):
             batch_size = 32768
             map_num_parallel = None
 
+        metadata['counts'][set_label] = sum(
+            c['count'] for c in data_file_infos[file_range[0]:file_range[1]]
+        )
         datasets[set_label] = _build_dataset(
             data_files[file_range[0]:file_range[1]],
             example_schema, transforms,
@@ -95,32 +99,6 @@ def _build_dataset(
         num_parallel_calls=map_num_parallel
     )
     return dataset
-
-
-def _count_examples(counts_path, data_files, splits):
-    """Count examples in training, validation, and test sets.
-
-    Args:
-        counts_path:  Path to YAML file with numbers of examples in each
-            data file.
-        data_files:  Paths to all data files.
-        splits:  Splitting of data files into the three sets.  Same
-            format as the return value of _find_splits.
-
-    Return:
-        Mapping from labels of the three sets to numbers of examples.
-    """
-
-    with tf.io.gfile.GFile(counts_path) as f:
-        per_file_counts = yaml.safe_load(f.read())
-    counts = {}
-    for set_label, file_range in splits.items():
-        n = sum(
-            per_file_counts[os.path.split(path)[1]]
-            for path in data_files[file_range[0]:file_range[1]]
-        )
-        counts[set_label] = n
-    return counts
 
 
 def _create_transform_op(feature_info):
@@ -175,4 +153,3 @@ def _find_splits(nums, num_total):
         splits[key] = (i, i + n)
         i += n
     return splits
-

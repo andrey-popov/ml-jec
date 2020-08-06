@@ -4,6 +4,7 @@ This repository contains code for calibration of the magnitude of the transverse
 
 Technically, the DNN is trained to predict the logarithm of the ratio between the true p<sub>T</sub> known from simulation and the uncalibrated p<sub>T</sub> of the corresponding reconstructed jet. In the current implementation a simple MLP architecture is used, and around 70 properties of a jet are fed as inputs.
 
+**Instructions below refer to tag `tabular`.**
 
 ## Dataset
 
