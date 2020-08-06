@@ -1,7 +1,9 @@
 import copy
 import os
 
+import numpy as np
 import tensorflow as tf
+import uproot
 import yaml
 
 
@@ -63,7 +65,7 @@ def build_datasets(config):
         )
         datasets[set_label] = _build_dataset(
             data_files[file_range[0]:file_range[1]],
-            example_schema, transforms,
+            transforms,
             repeat=repeat, batch_size=batch_size,
             map_num_parallel=map_num_parallel
         )
@@ -71,14 +73,13 @@ def build_datasets(config):
 
 
 def _build_dataset(
-    files, example_schema, transforms, repeat=False, batch_size=128,
+    paths, transforms, repeat=False, batch_size=128,
     map_num_parallel=None
 ):
     """Build a dataset.
 
     Args:
-        files:  Paths to files included in the dataset.
-        example_schema:  Schema to parse profobuf messages.
+        paths:  Paths to files included in the dataset.
         transforms:  List of pairs of names of features and
             preprocessing operations to be applied to them.
         repeat:  Whether the dataset should be repeated.
@@ -87,17 +88,20 @@ def _build_dataset(
             Directly forwarded to that method.
 
     Return:
-        TFRecordDataset.
+        TensorFlow Dataset.
     """
 
-    dataset = tf.data.TFRecordDataset(files, compression_type='GZIP')
+    # Read input ROOT files one at a time (with prefetching)
+    dataset = tf.data.Dataset.from_tensor_slices(paths)
+    dataset = dataset.map(_read_root_file_wrapper)
+    dataset = dataset.prefetch(1)
+
+    dataset = dataset.map(_preprocess, num_parallel_calls=map_num_parallel)
+
+    dataset = dataset.unbatch()
     if repeat:
         dataset = dataset.repeat()
     dataset = dataset.batch(batch_size)
-    dataset = dataset.map(
-        lambda e: _deserialize_example(e, example_schema, transforms),
-        num_parallel_calls=map_num_parallel
-    )
     return dataset
 
 
@@ -114,16 +118,6 @@ def _create_transform_op(feature_info):
         def op(x):
             return (x - loc) / scale
     return op
-
-
-def _deserialize_example(example, schema, transforms):
-    """Deserialize protobuf messages and apply preprocessing."""
-
-    decoded_batch = tf.io.parse_example(example, schema)
-    features = []
-    for column, transform in transforms:
-        features.append(transform(decoded_batch[column]))
-    return tf.concat(features, axis=1), decoded_batch['target']
 
 
 def _find_splits(nums, num_total):
@@ -153,3 +147,72 @@ def _find_splits(nums, num_total):
         splits[key] = (i, i + n)
         i += n
     return splits
+
+
+def _preprocess(batch):
+    """Perform preprocessing for a batch.
+
+    Args:
+        batch:  Dictionary of tensors representing individual features
+            in the current batch.
+
+    Return:
+        Tuple of tensors representing concatenated global features and
+        the target.
+    """
+
+    # Target
+    target = tf.math.log(batch['pt_gen'] / batch['pt'])
+    batch.pop('pt_gen')
+
+    # Concatenate global features in a single dense block
+    global_features = [
+        tf.expand_dims(batch[name], axis=1)
+        for name in [
+            'pt', 'eta', 'phi', 'mass', 'area', 'num_pv', 'rho'
+        ]
+    ]
+    global_features = tf.concat(global_features, axis=1)
+
+    return global_features, target
+
+
+def _read_root_file(path, branches):
+    """Read a single ROOT file.
+
+    Args:
+        path:  NumPy array with the path the file.
+        branches:  NumPy array with branches to be read.
+
+    Return:
+        List of NumPy arrays for each specified branch.  The order
+        matches the order of branches.
+    """
+
+    input_file = uproot.open(path.decode())
+    tree = input_file['Jets']
+    data = tree.arrays(branches=branches)
+    return [data[name].astype(np.float32) for name in branches]
+
+
+def _read_root_file_wrapper(path):
+    """Wrapper around _read_root_file.
+
+    Specify branches to read and convert the output to a dictionary.
+
+    Args:
+        path:  Tensor representing path to the file to read.
+
+    Return:
+        Dictionary that maps branch names to the corresponding tensors.
+    """
+
+    branches = [
+        'pt_gen', 'pt', 'eta', 'phi', 'mass', 'area', 'num_pv', 'rho'
+    ]
+    data = tf.numpy_function(
+        func=_read_root_file,
+        inp=[path, branches], Tout=[tf.float32] * len(branches),
+        name='read_root'
+    )
+    return {k: v for k, v in zip(branches, data)}
