@@ -34,15 +34,10 @@ def build_datasets(config):
         os.path.join(config['location'], 'transform.yaml')
     ) as f:
         feature_infos = yaml.safe_load(f.read())
-    example_schema = {
-        info['feature']: tf.io.FixedLenFeature([1], tf.float32)
+    transforms = {
+        info['feature']: _create_transform_op(info)
         for info in feature_infos
     }
-    example_schema['target'] = tf.io.FixedLenFeature([1], tf.float32)
-    transforms = [
-        (info['feature'], _create_transform_op(info))
-        for info in feature_infos
-    ]
 
     splits = _find_splits(config['split'], len(data_files))
     metadata = {}
@@ -64,8 +59,7 @@ def build_datasets(config):
             c['count'] for c in data_file_infos[file_range[0]:file_range[1]]
         )
         datasets[set_label] = _build_dataset(
-            data_files[file_range[0]:file_range[1]],
-            transforms,
+            data_files[file_range[0]:file_range[1]], transforms,
             repeat=repeat, batch_size=batch_size,
             map_num_parallel=map_num_parallel
         )
@@ -96,7 +90,10 @@ def _build_dataset(
     dataset = dataset.map(_read_root_file_wrapper)
     dataset = dataset.prefetch(1)
 
-    dataset = dataset.map(_preprocess, num_parallel_calls=map_num_parallel)
+    dataset = dataset.map(
+        lambda batch: _preprocess(batch, transforms),
+        num_parallel_calls=map_num_parallel
+    )
 
     dataset = dataset.unbatch()
     if repeat:
@@ -149,12 +146,14 @@ def _find_splits(nums, num_total):
     return splits
 
 
-def _preprocess(batch):
+def _preprocess(batch, transforms):
     """Perform preprocessing for a batch.
 
     Args:
         batch:  Dictionary of tensors representing individual features
             in the current batch.
+        transforms:  List of pairs of names of features and
+            corresponding transformation operations.
 
     Return:
         Tuple of tensors representing concatenated global features and
@@ -165,6 +164,13 @@ def _preprocess(batch):
     target = tf.math.log(batch['pt_gen'] / batch['pt'])
     batch.pop('pt_gen')
 
+    # Apply preprocessing
+    if transforms:
+        for feature_name, column in batch.items():
+            if feature_name in transforms:
+                transform = transforms[feature_name]
+                batch[feature_name] = transform(column)
+
     # Concatenate global features in a single dense block
     global_features = [
         tf.expand_dims(batch[name], axis=1)
@@ -172,9 +178,9 @@ def _preprocess(batch):
             'pt', 'eta', 'phi', 'mass', 'area', 'num_pv', 'rho'
         ]
     ]
-    global_features = tf.concat(global_features, axis=1)
+    global_features_block = tf.concat(global_features, axis=1)
 
-    return global_features, target
+    return global_features_block, target
 
 
 def _read_root_file(path, branches):

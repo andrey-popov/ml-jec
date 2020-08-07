@@ -28,14 +28,11 @@ def build_transform(sources, save_path):
         pandas dataframe after the transformation.
     """
 
-    features_to_drop = [
-        'pt_gen', 'eta_gen', 'phi_gen', 'mass_gen',
-        'hadron_flavor', 'parton_flavor',
-        'pt_full_corr'
+    branches = [
+        'pt', 'eta', 'phi', 'mass', 'area', 'num_pv', 'rho'
     ]
     dataframe = pd.concat(
-        df.drop(columns=features_to_drop)
-        for df in uproot.pandas.iterate(sources, 'Jets')
+        df for df in uproot.pandas.iterate(sources, 'Jets', branches=branches)
     )
 
     # Use arcsinh transformation to features with heavy tails.  Choose
@@ -43,13 +40,7 @@ def build_transform(sources, save_path):
     # reach zero.  Describe transformations with a mapping from feature
     # name to the scale to be used for arcsinh.
     arcsinh_scales = {
-        'pt': 10., 'pt_l1corr': 10., 'mass': 10.,
-        'mult_mu': 1., 'mult_el': 1., 'mult_ph': 1.,
-        'mult_ch_had': 1., 'mult_ne_had': 1.,
-        'mult_hf_em': 1., 'mult_hf_had': 1.,
-        'mean_dr2': 1e-3, 'pull_magnitude': 1.,
-        'sv_mass': 1., 'sv_pt_frac': 0.01, 'sv_distance': 0.1,
-        'sv_significance': 1., 'sv_num_tracks': 1.
+        'pt': 10., 'mass': 10.
     }
 
     # Apply the non-linear transformations and scale the resulting
@@ -113,4 +104,3 @@ if __name__ == '__main__':
         except FileExistsError:
             pass
         plot_features(transformed_dataframe, args.plots)
-

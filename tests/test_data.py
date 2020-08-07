@@ -35,3 +35,14 @@ def test_dataset():
     assert len(shape) == 2 and shape[0] == batch_size and shape[1] == 7
     shape = batch[1].shape
     assert len(shape) == 1 and shape[0] == batch_size
+
+
+def test_datasets_full():
+    config = {'data': {
+        'location': 'data',
+        'split': [3, 1, -1],
+        'batch_size': 5
+    }}
+    metadata, train_ds, val_ds, test_ds = data.build_datasets(config)
+    assert 'counts' in metadata and 'features' in metadata
+    assert len(train_ds.element_spec) == 2
