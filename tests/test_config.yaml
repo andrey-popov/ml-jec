@@ -1,0 +1,29 @@
+run:
+  name: test
+  storage: test_results
+
+data:
+  location: data
+  split: [3, 1, -1]
+  batch_size: 5
+
+model:
+  type: plain
+  num_layers: 2
+  num_units: 16
+
+loss: mae
+
+train:
+  steps_per_epoch: 10
+  max_epochs: 10
+  learning_rate: 5.e-4
+  reduce_lr_on_plateau:
+    factor: 0.2
+    patience: 10
+    min_delta: &min_delta 5.e-5
+  early_stopping:
+    patience: 15
+    min_delta: *min_delta
+
+predict: true

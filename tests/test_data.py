@@ -13,7 +13,7 @@ def test_read_root():
     assert len(arrays) == len(branches)
     for a in arrays:
         assert isinstance(a, np.ndarray)
-        assert len(a.shape) == 1
+        assert len(a.shape) == 2 and a.shape[1] == 1
 
 
 def test_read_root_wrapper():
@@ -34,7 +34,7 @@ def test_dataset():
     shape = batch[0].shape
     assert len(shape) == 2 and shape[0] == batch_size and shape[1] == 7
     shape = batch[1].shape
-    assert len(shape) == 1 and shape[0] == batch_size
+    assert len(shape) == 2 and shape[0] == batch_size and shape[1] == 1
 
 
 def test_datasets_full():

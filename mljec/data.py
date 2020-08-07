@@ -173,7 +173,7 @@ def _preprocess(batch, transforms):
 
     # Concatenate global features in a single dense block
     global_features = [
-        tf.expand_dims(batch[name], axis=1)
+        batch[name]
         for name in [
             'pt', 'eta', 'phi', 'mass', 'area', 'num_pv', 'rho'
         ]
@@ -199,7 +199,10 @@ def _read_root_file(path, branches):
     input_file = uproot.open(path.decode())
     tree = input_file['Jets']
     data = tree.arrays(branches=branches)
-    return [data[name].astype(np.float32) for name in branches]
+    return [
+        np.expand_dims(data[name].astype(np.float32), axis=1)
+        for name in branches
+    ]
 
 
 @tf.function(input_signature=[tf.TensorSpec((), dtype=tf.string)])
@@ -223,4 +226,6 @@ def _read_root_file_wrapper(path):
         inp=[path, branches], Tout=[tf.float32] * len(branches),
         name='read_root'
     )
+    for column in data:
+        column.set_shape((None, 1))
     return {k: v for k, v in zip(branches, data)}
