@@ -7,14 +7,13 @@ from tensorflow.keras.layers import (
 )
 
 
-def build_model(config, num_features):
+def build_model(config):
     """Construct model specified in the configuration.
 
     Also create optimizer and set the loss function.
 
     Args:
         config:  Dictionary representing configuration file.
-        num_features:  Number of input features for the model.
 
     Return:
         Compiled model.
@@ -24,6 +23,9 @@ def build_model(config, num_features):
     if isinstance(model_config, str):
         model = keras.models.load_model(model_config)
         return model
+
+    features = config['features']
+    num_features = len(features['global']['numeric'])
 
     head_config = model_config['head']
     inputs = keras.Input(shape=(num_features, ), name='global_numeric')

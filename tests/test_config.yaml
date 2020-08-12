@@ -7,6 +7,10 @@ data:
   split: [3, 1, -1]
   batch_size: 5
 
+features:
+  global:
+    numeric: [pt, eta, phi, mass, area, num_pv, rho]
+
 model:
   head:
     type: plain

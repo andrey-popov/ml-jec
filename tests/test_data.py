@@ -18,7 +18,11 @@ def test_read_root():
 
 def test_read_root_wrapper():
     path = tf.constant('data/shards/1.root')
-    result = data._read_root_file_wrapper(path)
+    features = {'global': {'numeric': ['pt', 'eta', 'mass', 'rho']}}
+    result = tf.function(
+        lambda path: data._read_root_file_wrapper(path, features),
+        input_signature=[tf.TensorSpec((), dtype=tf.string)]
+    )(path)
     assert isinstance(result, collections.abc.Mapping)
 
 
@@ -27,25 +31,35 @@ def test_dataset():
         os.path.join('data', 'shards', f'{i + 1}.root')
         for i in range(5)
     ]
+    features = {'global': {'numeric': ['pt', 'eta', 'mass', 'rho']}}
     batch_size = 5
-    dataset = data._build_dataset(input_files, None, batch_size=batch_size)
+    dataset = data._build_dataset(
+        input_files, features, {}, batch_size=batch_size
+    )
     batch = next(iter(dataset))
     assert len(batch) == 2
     inputs = batch[0]
     assert isinstance(inputs, collections.abc.Mapping)
     assert 'global_numeric' in inputs
     shape = inputs['global_numeric'].shape
-    assert len(shape) == 2 and shape[0] == batch_size and shape[1] == 7
+    assert len(shape) == 2 and shape[0] == batch_size and shape[1] == 4
     shape = batch[1].shape
     assert len(shape) == 2 and shape[0] == batch_size and shape[1] == 1
 
 
 def test_datasets_full():
-    config = {'data': {
-        'location': 'data',
-        'split': [3, 1, -1],
-        'batch_size': 5
-    }}
+    config = {
+        'data': {
+            'location': 'data',
+            'split': [3, 1, -1],
+            'batch_size': 5
+        },
+        'features': {
+            'global': {
+                'numeric': ['pt', 'eta', 'mass', 'rho']
+            }
+        }
+    }
     metadata, train_ds, val_ds, test_ds = data.build_datasets(config)
     assert 'counts' in metadata and 'features' in metadata
     assert len(train_ds.element_spec) == 2

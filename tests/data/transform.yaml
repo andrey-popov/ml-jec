@@ -1,25 +1,25 @@
-- arcsinh:
+pt:
+  arcsinh:
     scale: 10.0
-  feature: pt
   loc: 0.001962279202416539
   scale: 7.2959527026396245
-- feature: eta
+eta:
   loc: -5.113057613372803
   scale: 10.222169876098633
-- feature: phi
+phi:
   loc: -3.1415464878082275
   scale: 6.283127069473267
-- arcsinh:
+mass:
+  arcsinh:
     scale: 10.0
-  feature: mass
   loc: -5.81264503125567e-05
   scale: 4.855455350876582
-- feature: area
+area:
   loc: 0.0
   scale: 0.8377580642700195
-- feature: num_pv
+num_pv:
   loc: 1.0
   scale: 105.0
-- feature: rho
+rho:
   loc: 0.0
   scale: 73.87381744384766

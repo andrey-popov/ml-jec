@@ -103,7 +103,7 @@ if __name__ == '__main__':
     train_dataset = train_dataset.prefetch(tf.data.experimental.AUTOTUNE)
     val_dataset = val_dataset.cache()
 
-    model = build_model(config, len(metadata['features']))
+    model = build_model(config)
     print(model.summary())
     if args.plot_model:
         tf.keras.utils.plot_model(

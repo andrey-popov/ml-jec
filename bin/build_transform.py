@@ -47,7 +47,7 @@ def build_transform(sources, save_path):
     # features to range [0, 1]
     transforms = []
     for feature in dataframe.columns:
-        transform = {'feature': feature}
+        transform = {}
         if feature in arcsinh_scales:
             scale = arcsinh_scales[feature]
             transform['arcsinh'] = {'scale': scale}
@@ -56,7 +56,7 @@ def build_transform(sources, save_path):
         transform['scale'] = float(dataframe[feature].max() - transform['loc'])
         dataframe[feature] -= transform['loc']
         dataframe[feature] /= transform['scale']
-        transforms.append(transform)
+        transforms[feature] = transform
 
     with open(save_path, 'w') as f:
         yaml.safe_dump(transforms, f)

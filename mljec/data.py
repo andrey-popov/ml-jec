@@ -16,39 +16,40 @@ def build_datasets(config):
     Return:
         Metadata and the three datasets.  The metadata are represented
         by a dictionary.  It contains numbers of examples in each set
-        and the list of input features.
+        and a dictionary of input features.
     """
 
-    config = config['data']
+    data_config = config['data']
 
     with tf.io.gfile.GFile(
-        os.path.join(config['location'], 'data.yaml')
+        os.path.join(data_config['location'], 'data.yaml')
     ) as f:
         data_file_infos = yaml.safe_load(f.read())
     data_files = [
-        os.path.join(config['location'], c['path'])
+        os.path.join(data_config['location'], c['path'])
         for c in data_file_infos
     ]
 
+    features = config['features']
     with tf.io.gfile.GFile(
-        os.path.join(config['location'], 'transform.yaml')
+        os.path.join(data_config['location'], 'transform.yaml')
     ) as f:
-        feature_infos = yaml.safe_load(f.read())
+        transforms = yaml.safe_load(f.read())
     transforms = {
-        info['feature']: _create_transform_op(info)
-        for info in feature_infos
+        feature: _create_transform_op(transform_config)
+        for feature, transform_config in transforms.items()
     }
 
-    splits = _find_splits(config['split'], len(data_files))
+    splits = _find_splits(data_config['split'], len(data_files))
     metadata = {}
     metadata['counts'] = {}
-    metadata['features'] = [info['feature'] for info in feature_infos]
+    metadata['features'] = features
 
     datasets = {}
     for set_label, file_range in splits.items():
         if set_label == 'train':
             repeat = True
-            batch_size = config['batch_size']
+            batch_size = data_config['batch_size']
             map_num_parallel = tf.data.experimental.AUTOTUNE
         else:
             repeat = False
@@ -59,7 +60,7 @@ def build_datasets(config):
             c['count'] for c in data_file_infos[file_range[0]:file_range[1]]
         )
         datasets[set_label] = _build_dataset(
-            data_files[file_range[0]:file_range[1]], transforms,
+            data_files[file_range[0]:file_range[1]], features, transforms,
             repeat=repeat, batch_size=batch_size,
             map_num_parallel=map_num_parallel
         )
@@ -67,13 +68,14 @@ def build_datasets(config):
 
 
 def _build_dataset(
-    paths, transforms, repeat=False, batch_size=128,
+    paths, features, transforms, repeat=False, batch_size=128,
     map_num_parallel=None
 ):
     """Build a dataset.
 
     Args:
         paths:  Paths to files included in the dataset.
+        features:  Dictionary with names of input features.
         transforms:  List of pairs of names of features and
             preprocessing operations to be applied to them.
         repeat:  Whether the dataset should be repeated.
@@ -87,11 +89,13 @@ def _build_dataset(
 
     # Read input ROOT files one at a time (with prefetching)
     dataset = tf.data.Dataset.from_tensor_slices(paths)
-    dataset = dataset.map(_read_root_file_wrapper)
+    dataset = dataset.map(
+        lambda path: _read_root_file_wrapper(path, features)
+    )
     dataset = dataset.prefetch(1)
 
     dataset = dataset.map(
-        lambda batch: _preprocess(batch, transforms),
+        lambda batch: _preprocess(batch, features, transforms),
         num_parallel_calls=map_num_parallel
     )
 
@@ -102,13 +106,13 @@ def _build_dataset(
     return dataset
 
 
-def _create_transform_op(feature_info):
+def _create_transform_op(transform_config):
     """Construct preprocessing operation for one feature."""
 
-    loc = feature_info['loc']
-    scale = feature_info['scale']
-    if 'arcsinh' in feature_info:
-        arcsinh_scale = feature_info['arcsinh']['scale']
+    loc = transform_config['loc']
+    scale = transform_config['scale']
+    if 'arcsinh' in transform_config:
+        arcsinh_scale = transform_config['arcsinh']['scale']
         def op(x):
             return (tf.math.asinh(x / arcsinh_scale) - loc) / scale
     else:
@@ -146,18 +150,18 @@ def _find_splits(nums, num_total):
     return splits
 
 
-def _preprocess(batch, transforms):
+def _preprocess(batch, features, transforms={}):
     """Perform preprocessing for a batch.
 
     Args:
         batch:  Dictionary of tensors representing individual features
             in the current batch.
-        transforms:  List of pairs of names of features and
-            corresponding transformation operations.
+        features:  Dictionary with names of input features.
+        transforms:  Dictionary of transformation operations.
 
     Return:
-        Tuple of inputs and target.  The inputs are represented with a
-        dictionary of tensors.
+        Tuple of preprocessed input features and target.  The input
+        features are represented with a dictionary of tensors.
     """
 
     # Target
@@ -165,18 +169,15 @@ def _preprocess(batch, transforms):
     batch.pop('pt_gen')
 
     # Apply preprocessing
-    if transforms:
-        for feature_name, column in batch.items():
-            if feature_name in transforms:
-                transform = transforms[feature_name]
-                batch[feature_name] = transform(column)
+    for feature_name, column in batch.items():
+        if feature_name in transforms:
+            transform = transforms[feature_name]
+            batch[feature_name] = transform(column)
 
     # Concatenate global features in a single dense block
     global_features = [
         batch[name]
-        for name in [
-            'pt', 'eta', 'phi', 'mass', 'area', 'num_pv', 'rho'
-        ]
+        for name in features['global']['numeric']
     ]
     global_features_block = tf.concat(global_features, axis=1)
 
@@ -205,22 +206,24 @@ def _read_root_file(path, branches):
     ]
 
 
-@tf.function(input_signature=[tf.TensorSpec((), dtype=tf.string)])
-def _read_root_file_wrapper(path):
+def _read_root_file_wrapper(path, features):
     """Wrapper around _read_root_file.
 
     Specify branches to read and convert the output to a dictionary.
 
     Args:
         path:  Tensor representing path to the file to read.
+        features:  Dictionary with names of input features.
 
     Return:
         Dictionary that maps branch names to the corresponding tensors.
     """
 
-    branches = [
-        'pt_gen', 'pt', 'eta', 'phi', 'mass', 'area', 'num_pv', 'rho'
-    ]
+    # Construct the list of branches to read.  In addition to input
+    # features, include pt_gen, which is needed to compute the target.
+    branches = ['pt_gen']
+    branches += features['global']['numeric']
+
     data = tf.numpy_function(
         func=_read_root_file,
         inp=[path, branches], Tout=[tf.float32] * len(branches),
