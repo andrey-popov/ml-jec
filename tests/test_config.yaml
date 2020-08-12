@@ -8,9 +8,10 @@ data:
   batch_size: 5
 
 model:
-  type: plain
-  num_layers: 2
-  num_units: 16
+  head:
+    type: plain
+    num_layers: 2
+    num_units: 16
 
 loss: mae
 

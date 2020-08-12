@@ -1,8 +1,10 @@
 from collections.abc import Sequence
 import math
 
-import tensorflow as tf
-import tensorflow.keras.layers as layers
+from tensorflow import keras
+from tensorflow.keras.layers import (
+    Activation, Add, BatchNormalization, Dense, Dropout
+)
 
 
 def build_model(config, num_features):
@@ -20,29 +22,32 @@ def build_model(config, num_features):
 
     model_config = config['model']
     if isinstance(model_config, str):
-        model = tf.keras.models.load_model(model_config)
+        model = keras.models.load_model(model_config)
         return model
 
-    model_type = model_config['type']
+    head_config = model_config['head']
+    inputs = keras.Input(shape=(num_features, ), name='global_numeric')
+    model_type = head_config['type']
     if model_type == 'plain':
-        model = _build_model_plain(
-            num_layers=model_config.get('num_layers', None),
-            num_units=model_config['num_units'],
-            batch_norm=model_config.get('batch_norm', False),
-            dropout=model_config.get('dropout', 0),
-            num_features=num_features
+        out = _apply_mlp(
+            inputs,
+            num_layers=head_config.get('num_layers', None),
+            num_units=head_config['num_units'],
+            batch_norm=head_config.get('batch_norm', False),
+            dropout=head_config.get('dropout', 0)
         )
     elif model_type == 'resnet':
-        model = _build_model_resnet(
-            num_layers=model_config['num_layers'],
-            num_units=model_config['num_units'],
-            num_features=num_features
+        out = _apply_resnet(
+            inputs,
+            num_layers=head_config['num_layers'],
+            num_units=head_config['num_units']
         )
     else:
         raise RuntimeError(f'Unknown model type "{model_type}".')
+    model = keras.Model(inputs=inputs, outputs=out)
 
     if config['loss'] == 'huber':
-        loss = tf.keras.losses.Huber(math.log(2))
+        loss = keras.losses.Huber(math.log(2))
     else:
         loss = config['loss']
 
@@ -50,13 +55,13 @@ def build_model(config, num_features):
     return model
 
 
-def _build_model_plain(
-    num_layers=5, num_units=256, batch_norm=False, dropout=0,
-    num_features=None, name=None
+def _apply_mlp(
+    inputs, num_layers=5, num_units=256, batch_norm=False, dropout=0
 ):
-    """Construct an MLP.
+    """Apply an MLP fragment to given inputs.
 
     Args:
+        inputs:  Inputs to the network fragment.
         num_layers:  Number of hidden layers.  Ignored if num_units is
             a sequence.
         num_units:  Number of units in each hidden layer.  Can be a
@@ -64,60 +69,52 @@ def _build_model_plain(
             hidden layers.
         batch_norm:  Whether to apply batch normalization.
         dropout:  Dropout rate.  Disabled if 0.
-        num_features:  Optional number of input features.
-        name:  Optional name for the model.
     """
 
     if not isinstance(num_units, Sequence):
         num_units = [num_units] * num_layers
 
-    model = tf.keras.Sequential(name=name)
+    x = inputs
     for i, n in enumerate(num_units):
-        model.add(layers.Dense(
-            n, kernel_initializer='he_uniform', use_bias=not batch_norm,
-            input_shape=(num_features,) if i == 0 else (None,)
-        ))
+        x = Dense(
+            n, kernel_initializer='he_uniform', use_bias=not batch_norm
+        )(x)
         if batch_norm:
-            model.add(layers.BatchNormalization(scale=False))
-        model.add(layers.Activation('relu'))
+            x = BatchNormalization(scale=False)(x)
+        x = Activation('relu')(x)
         if dropout > 0 and i != 0:
-            model.add(layers.Dropout(dropout))
-    model.add(layers.Dense(1, kernel_initializer='he_uniform'))
-    return model
+            x = Dropout(dropout)(x)
+    x = Dense(1, kernel_initializer='he_uniform')(x)
+    return x
 
 
-def _build_model_resnet(
-    num_layers=5, num_units=256, num_features=None
-):
-    """Construct a ResNet.
+def _apply_resnet(inputs, num_layers=5, num_units=256):
+    """Apply a ResNet fragment to inputs.
 
     Args:
+        inputs:  Inputs for the network fragment.
         num_layers:  Number of ResNet blocks.  Each block includes two
             sublayers with non-linearities.
         num_units:  Number of units in each hidden layer.
-        num_features:  Optional number of input features.
     """
-
-    inputs = tf.keras.Input(shape=(num_features,))
 
     # The first layer is special in that it includes a projection for
     # the inputs in order to match the dimensions
-    x = layers.Dense(
+    x = Dense(
         num_units, kernel_initializer='he_uniform', use_bias=False
     )(inputs)
-    y = layers.Dense(num_units, kernel_initializer='he_uniform')(x)
-    y = layers.Activation('relu')(y)
-    y = layers.Dense(num_units, kernel_initializer='he_uniform')(y)
-    y = layers.Add()([x, y])
-    x = layers.Activation('relu')(y)
+    y = Dense(num_units, kernel_initializer='he_uniform')(x)
+    y = Activation('relu')(y)
+    y = Dense(num_units, kernel_initializer='he_uniform')(y)
+    y = Add()([x, y])
+    x = Activation('relu')(y)
 
     for _ in range(num_layers - 1):
-        y = layers.Dense(num_units, kernel_initializer='he_uniform')(x)
-        y = layers.Activation('relu')(y)
-        y = layers.Dense(num_units, kernel_initializer='he_uniform')(y)
-        y = layers.Add()([x, y])
-        x = layers.Activation('relu')(y)
+        y = Dense(num_units, kernel_initializer='he_uniform')(x)
+        y = Activation('relu')(y)
+        y = Dense(num_units, kernel_initializer='he_uniform')(y)
+        y = Add()([x, y])
+        x = Activation('relu')(y)
 
-    output = layers.Dense(1, kernel_initializer='he_uniform')(x)
-    model = tf.keras.Model(inputs=inputs, outputs=output)
-    return model
+    output = Dense(1, kernel_initializer='he_uniform')(x)
+    return output

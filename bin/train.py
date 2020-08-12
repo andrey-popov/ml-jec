@@ -117,6 +117,7 @@ if __name__ == '__main__':
     )
     print('Validation loss:', min(history['val_loss']))
 
+
     for zoom, postfix in [(False, ''), (True, '_zoomed')]:
         plot_history(
             config, history,

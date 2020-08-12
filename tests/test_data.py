@@ -31,7 +31,10 @@ def test_dataset():
     dataset = data._build_dataset(input_files, None, batch_size=batch_size)
     batch = next(iter(dataset))
     assert len(batch) == 2
-    shape = batch[0].shape
+    inputs = batch[0]
+    assert isinstance(inputs, collections.abc.Mapping)
+    assert 'global_numeric' in inputs
+    shape = inputs['global_numeric'].shape
     assert len(shape) == 2 and shape[0] == batch_size and shape[1] == 7
     shape = batch[1].shape
     assert len(shape) == 2 and shape[0] == batch_size and shape[1] == 1

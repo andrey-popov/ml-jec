@@ -156,8 +156,8 @@ def _preprocess(batch, transforms):
             corresponding transformation operations.
 
     Return:
-        Tuple of tensors representing concatenated global features and
-        the target.
+        Tuple of inputs and target.  The inputs are represented with a
+        dictionary of tensors.
     """
 
     # Target
@@ -180,7 +180,7 @@ def _preprocess(batch, transforms):
     ]
     global_features_block = tf.concat(global_features, axis=1)
 
-    return global_features_block, target
+    return {'global_numeric': global_features_block}, target
 
 
 def _read_root_file(path, branches):
