@@ -1,5 +1,8 @@
 import copy
 import os
+from typing import (
+    Callable, Dict, Mapping, Iterable, List, Sequence, Tuple, Union
+)
 
 import numpy as np
 import tensorflow as tf
@@ -7,16 +10,18 @@ import uproot
 import yaml
 
 
-def build_datasets(config):
+def build_datasets(
+    config: Mapping
+) -> Tuple[Dict, tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
     """Build training, validation, and test datasets.
 
     Args:
         config:  Dictionary representing configuration file.
 
     Return:
-        Metadata and the three datasets.  The metadata are represented
-        by a dictionary.  It contains numbers of examples in each set
-        and a dictionary of input features.
+        Metadata and the three datasets.  The metadata include  numbers
+        of examples in each set and a dictionary of input features (as
+        read from the configuration).
     """
 
     data_config = config['data']
@@ -68,16 +73,18 @@ def build_datasets(config):
 
 
 def _build_dataset(
-    paths, features, transforms, repeat=False, batch_size=128,
-    map_num_parallel=None
-):
+    paths: Iterable, features: Mapping,
+    transforms: Mapping[str, Callable[[tf.Tensor], tf.Tensor]],
+    repeat: bool = False, batch_size: int = 128,
+    map_num_parallel: Union[int, None] = None
+) -> tf.data.Dataset:
     """Build a dataset.
 
     Args:
         paths:  Paths to files included in the dataset.
         features:  Dictionary with names of input features.
-        transforms:  List of pairs of names of features and
-            preprocessing operations to be applied to them.
+        transforms:  Preprocessing operations to be applied to
+            individual features.
         repeat:  Whether the dataset should be repeated.
         batch_size:  Batch size.
         map_num_parallel:  Number of parallel calls for Dataset.map.
@@ -106,28 +113,48 @@ def _build_dataset(
     return dataset
 
 
-def _create_transform_op(transform_config):
-    """Construct preprocessing operation for one feature."""
+def _create_transform_op(
+    transform_config: Sequence[Mapping]
+) -> Callable[[tf.Tensor], tf.Tensor]:
+    """Construct preprocessing operation for one feature.
 
-    loc = transform_config['loc']
-    scale = transform_config['scale']
-    if 'arcsinh' in transform_config:
-        arcsinh_scale = transform_config['arcsinh']['scale']
-        def op(x):
-            return (tf.math.asinh(x / arcsinh_scale) - loc) / scale
-    else:
-        def op(x):
-            return (x - loc) / scale
+    Args:
+        transform_config:  Sequence of preprocessing steps.  Each step
+            is described by a mapping with keys "type" and "params"
+            (optional), which specify the type of the transformation and
+            parameters of the transformation.
+
+    Return:
+        Callable that applies the transformation.
+    """
+
+    def op(x):
+        for step in transform_config:
+            transform_type = step['type']
+            if transform_type == 'abs':
+                x = tf.abs(x)
+            elif transform_type == 'arcsinh':
+                x = tf.math.asinh(x / step['params']['scale'])
+            elif transform_type == 'linear':
+                x = (x - step['params']['loc']) / step['params']['scale']
+            else:
+                raise RuntimeError(
+                    f'Unknown transformation type "{transform_type}".'
+                )
+        return x
+
     return op
 
 
-def _find_splits(nums, num_total):
+def _find_splits(
+    nums: Sequence[int], num_total: int
+) -> Dict[str, Tuple[int, int]]:
     """Find ranges of indices of input files for the three sets.
 
     Args:
-        nums:  Sequence with numbers of files in the training,
-            validation, and test sets.  At maximum one element can be
-            -1, which deduced from the total number of files.
+        nums:  Numbers of files in the training, validation, and test
+            sets.  At maximum one element can be -1, which deduced from
+            the total number of files.
         num_total:  Total number of files.
 
     Return:
@@ -150,12 +177,15 @@ def _find_splits(nums, num_total):
     return splits
 
 
-def _preprocess(batch, features, transforms={}):
+def _preprocess(
+    batch: Mapping[str, tf.Tensor], features: Mapping,
+    transforms: Mapping[str, Callable[[tf.Tensor], tf.Tensor]] = {}
+) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:
     """Perform preprocessing for a batch.
 
     Args:
-        batch:  Dictionary of tensors representing individual features
-            in the current batch.
+        batch:  Tensors representing individual features in the
+            current batch.
         features:  Dictionary with names of input features.
         transforms:  Dictionary of transformation operations.
 
@@ -184,17 +214,18 @@ def _preprocess(batch, features, transforms={}):
     return {'global_numeric': global_features_block}, target
 
 
-def _read_root_file(path, branches):
+def _read_root_file(
+    path: bytes, branches: np.ndarray
+) -> List[np.ndarray]:
     """Read a single ROOT file.
 
     Args:
         path:  Path the file represented as bytes.
-        branches:  NumPy array with branches to be read.  The branches
-            are represented as bytes.
+        branches:  Names of branches to be read, represented as bytes.
 
     Return:
-        List of NumPy arrays for each specified branch.  The order
-        matches the order of branches.
+        NumPy arrays for all specified branches.  The order matches
+        the order of branches in the argument.
     """
 
     input_file = uproot.open(path.decode())
@@ -206,7 +237,9 @@ def _read_root_file(path, branches):
     ]
 
 
-def _read_root_file_wrapper(path, features):
+def _read_root_file_wrapper(
+    path: str, features: Mapping
+) -> Dict[str, tf.Tensor]:
     """Wrapper around _read_root_file.
 
     Specify branches to read and convert the output to a dictionary.

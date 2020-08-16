@@ -3,79 +3,119 @@
 """Build transformation for input features."""
 
 import argparse
+import math
 import os
+from typing import Dict, Iterable, Union
 
+import awkward
 from matplotlib import pyplot as plt
 import numpy as np
-import pandas as pd
 import uproot
 import yaml
 
 
-def build_transform(sources, save_path):
+# Predefined non-linear transformations for each feature.  Linear
+# scaling will be added automatically.
+CUSTOM_TRANSFORMS = {
+    'pt': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 10.}
+        }
+    ],
+    'eta': [],
+    'phi': [],
+    'mass': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 10.}
+        }
+    ],
+    'area': [],
+    'num_pv': [],
+    'rho': []
+}
+
+
+def build_transform(
+    sources: Iterable[str], save_path: str
+) -> Dict[str, Union[np.ndarray, awkward.JaggedArray]]:
     """Construct preprocessing transformation for input features.
 
-    Apply manually chosen non-linear transformation to certain features.
-    After that, rescale all features to range [0., 1.].  Save parameters
-    of the transformations to a YAML file.
+    Apply predefined non-linear transformations.  Then rescale all
+    specified features to range [0, 1].  Save parameters of the
+    transformations to a YAML file.
 
     Args:
-        sources:  List of paths to source ROOT files.
+        sources:  Paths to source ROOT files.
         save_path:  Save path for the YAML file with parameters of the
             transformations.
 
     Return:
-        pandas dataframe after the transformation.
+        Transformed features.
     """
 
-    branches = [
-        'pt', 'eta', 'phi', 'mass', 'area', 'num_pv', 'rho'
-    ]
-    dataframe = pd.concat(
-        df for df in uproot.pandas.iterate(sources, 'Jets', branches=branches)
-    )
+    branches = list(CUSTOM_TRANSFORMS.keys())
+    shards = list(uproot.iterate(
+        sources, 'Jets', branches=branches, entrysteps=math.inf
+    ))
 
-    # Use arcsinh transformation to features with heavy tails.  Choose
-    # arcsinh instead of log because these features often approach or
-    # reach zero.  Describe transformations with a mapping from feature
-    # name to the scale to be used for arcsinh.
-    arcsinh_scales = {
-        'pt': 10., 'mass': 10.
-    }
+    # Merge all shards together
+    data = {}
+    for branch in branches:
+        data[branch] = awkward.concatenate(
+            [shard[branch.encode()] for shard in shards]
+        )
+    del shards
 
-    # Apply the non-linear transformations and scale the resulting
-    # features to range [0, 1]
-    transforms = []
-    for feature in dataframe.columns:
-        transform = {}
-        if feature in arcsinh_scales:
-            scale = arcsinh_scales[feature]
-            transform['arcsinh'] = {'scale': scale}
-            dataframe[feature] = np.arcsinh(dataframe[feature] / scale)
-        transform['loc'] = float(dataframe[feature].min())
-        transform['scale'] = float(dataframe[feature].max() - transform['loc'])
-        dataframe[feature] -= transform['loc']
-        dataframe[feature] /= transform['scale']
-        transforms[feature] = transform
+    transforms_all_features = {}
+    for feature, values in data.items():
+        transforms = []
+        values = values.astype(np.float32)
+
+        # Apply all custom transformations
+        for cfg in CUSTOM_TRANSFORMS[feature]:
+            transforms.append(cfg)
+            if cfg['type'] == 'abs':
+                values = np.abs(values)
+            elif cfg['type'] == 'arcsinh':
+                scale = cfg['params']['scale']
+                values = np.arcsinh(values / scale)
+
+        # Scale the transformed feature to the range [0, 1]
+        loc = float(values.min())
+        scale = float(values.max() - loc)
+        transforms.append({
+            'type': 'linear',
+            'params': {'loc': loc, 'scale': scale}
+        })
+        values -= loc
+        values /= scale
+
+        data[feature] = values
+        transforms_all_features[feature] = transforms
 
     with open(save_path, 'w') as f:
-        yaml.safe_dump(transforms, f)
-    return dataframe
+        yaml.safe_dump(transforms_all_features, f)
+    return data
 
 
-def plot_features(dataframe, save_dir):
+def plot_features(
+    arrays: Dict[str, Union[np.ndarray, awkward.JaggedArray]],
+    save_dir: str
+) -> None:
     """Plot transformed features.
 
     Args:
-        dataframe:  pandas dataframe with transformed features.
+        arrays:  Transformed features.
         save_dir:  Directory where produced plots should be saved.
     """
 
-    for feature, series in dataframe.iteritems():
+    for feature, values in arrays.items():
         fig = plt.figure()
         fig.patch.set_alpha(0)
         axes = fig.add_subplot()
-        axes.hist(series, range=(0., 1.), bins=50)
+        axes.hist(values, range=(0., 1.), bins=50)
         axes.set_xlim(0., 1.)
         axes.set_xlabel(feature)
         fig.savefig(os.path.join(save_dir, feature + '.pdf'))
@@ -97,10 +137,10 @@ if __name__ == '__main__':
         'of transformed features.'
     )
     args = arg_parser.parse_args()
-    transformed_dataframe = build_transform(args.sources, args.output)
+    data = build_transform(args.sources, args.output)
     if args.plots:
         try:
             os.makedirs(args.plots)
         except FileExistsError:
             pass
-        plot_features(transformed_dataframe, args.plots)
+        plot_features(data, args.plots)

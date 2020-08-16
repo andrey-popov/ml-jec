@@ -1,25 +1,41 @@
-pt:
-  arcsinh:
-    scale: 10.0
-  loc: 0.001962279202416539
-  scale: 7.2959527026396245
-eta:
-  loc: -5.113057613372803
-  scale: 10.222169876098633
-phi:
-  loc: -3.1415464878082275
-  scale: 6.283127069473267
-mass:
-  arcsinh:
-    scale: 10.0
-  loc: -5.81264503125567e-05
-  scale: 4.855455350876582
 area:
-  loc: 0.0
-  scale: 0.8377580642700195
+- params:
+    loc: 0.0
+    scale: 0.8377580642700195
+  type: linear
+eta:
+- params:
+    loc: -5.113057613372803
+    scale: 10.222169876098633
+  type: linear
+mass:
+- params:
+    scale: 10.0
+  type: arcsinh
+- params:
+    loc: -5.81264503125567e-05
+    scale: 4.855455350876582
+  type: linear
 num_pv:
-  loc: 1.0
-  scale: 105.0
+- params:
+    loc: 1.0
+    scale: 105.0
+  type: linear
+phi:
+- params:
+    loc: -3.1415464878082275
+    scale: 6.283127069473267
+  type: linear
+pt:
+- params:
+    scale: 10.0
+  type: arcsinh
+- params:
+    loc: 0.001962279202416539
+    scale: 7.2959527026396245
+  type: linear
 rho:
-  loc: 0.0
-  scale: 73.87381744384766
+- params:
+    loc: 0.0
+    scale: 73.87381744384766
+  type: linear
