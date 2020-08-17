@@ -113,6 +113,29 @@ def _build_dataset(
     return dataset
 
 
+def _create_mask(lengths: np.ndarray, max_length: int) -> np.ndarray:
+    """Create 2D mask that selects given numbers of elements.
+
+    The mask is a 2D array of boolean values.  Each row starts with the
+    number of True elements as given by an input array; they are
+    followed by False elements to pad the row.
+
+    Args:
+        lengths:  1D array the number of elements to be selected on
+            each row.
+        max_length:  The length of the rows.
+
+    Return:
+        Boolean mask for shape (len(lengths), max_length).
+    """
+
+    indices = np.repeat(
+        np.arange(max_length)[np.newaxis, :],
+        len(lengths), axis=0
+    )
+    return indices < lengths[:, np.newaxis]
+
+
 def _create_transform_op(
     transform_config: Sequence[Mapping]
 ) -> Callable[[tf.Tensor], tf.Tensor]:
@@ -135,6 +158,8 @@ def _create_transform_op(
                 x = tf.abs(x)
             elif transform_type == 'arcsinh':
                 x = tf.math.asinh(x / step['params']['scale'])
+            elif transform_type == 'log':
+                x = tf.math.log(x)
             elif transform_type == 'linear':
                 x = (x - step['params']['loc']) / step['params']['scale']
             else:
@@ -204,37 +229,67 @@ def _preprocess(
             transform = transforms[feature_name]
             batch[feature_name] = transform(column)
 
-    # Concatenate global features in a single dense block
-    global_features = [
-        batch[name]
-        for name in features['global']['numeric']
-    ]
-    global_features_block = tf.concat(global_features, axis=1)
+    # Concatenate numeric features into blocks
+    global_numeric_block = tf.concat(
+        [batch[name] for name in features['global']['numeric']],
+        axis=1
+    )
+    ch_numeric_block = tf.concat(
+        [
+            tf.expand_dims(batch[name], axis=2)
+            for name in features['ch']['numeric']
+        ],
+        axis=2
+    )
 
-    return {'global_numeric': global_features_block}, target
+    return (
+        {
+            'global_numeric': global_numeric_block,
+            'ch_mask': batch['ch_mask'],
+            'ch_numeric': ch_numeric_block
+        },
+        target
+    )
 
 
 def _read_root_file(
-    path: bytes, branches: np.ndarray
+    path: bytes, branches_global_numeric: np.ndarray,
+    max_size_ch: int, branches_ch_numeric: np.ndarray
 ) -> List[np.ndarray]:
     """Read a single ROOT file.
 
     Args:
-        path:  Path the file represented as bytes.
-        branches:  Names of branches to be read, represented as bytes.
+        path:  Path the file.
+        branches_global_numeric:  Names of branches with global numeric
+            features, represented with bytes.
+        max_size_ch:  Maximal number of charged constituents to
+            consider.
+        branches_ch_numeric:  Names of branches with numeric features of
+            charged constituents, represented with bytes.
 
     Return:
         NumPy arrays for all specified branches.  The order matches
-        the order of branches in the argument.
+        the order of branches in the arguments.  The arrays for charged
+        constituents are preceeded by a boolean mask that indicates the
+        presence of the constituents.
     """
 
     input_file = uproot.open(path.decode())
     tree = input_file['Jets']
-    data = tree.arrays(branches=branches)
-    return [
-        np.expand_dims(data[name].astype(np.float32), axis=1)
-        for name in branches
-    ]
+    branches_to_read = branches_global_numeric.tolist()
+    branches_to_read.append(b'ch_size')
+    branches_to_read += branches_ch_numeric.tolist()
+    data = tree.arrays(branches=branches_to_read)
+
+    results = []
+    for branch in branches_global_numeric:
+        results.append(np.expand_dims(data[branch].astype(np.float32), axis=1))
+    results.append(_create_mask(data[b'ch_size'], max_size_ch))
+    for branch in branches_ch_numeric:
+        results.append(
+            data[branch].pad(max_size_ch).regular().astype(np.float32)
+        )
+    return results
 
 
 def _read_root_file_wrapper(
@@ -242,7 +297,8 @@ def _read_root_file_wrapper(
 ) -> Dict[str, tf.Tensor]:
     """Wrapper around _read_root_file.
 
-    Specify branches to read and convert the output to a dictionary.
+    Specify what branches to read, call _read_root_file, and convert the
+    output to a dictionary.
 
     Args:
         path:  Tensor representing path to the file to read.
@@ -250,18 +306,38 @@ def _read_root_file_wrapper(
 
     Return:
         Dictionary that maps branch names to the corresponding tensors.
+        In addition to requested branches, this dictionary includes a
+        mask indicating the presence of constituents.
     """
 
-    # Construct the list of branches to read.  In addition to input
-    # features, include pt_gen, which is needed to compute the target.
+    inputs = [path]
+    output_types = []
+    output_names = []
+    output_shapes = []
+
+    # Global features.  In addition to those specified in the mapping
+    # given to this function, include pt_gen, which is needed to
+    # compute the regression target.
     branches = ['pt_gen']
     branches += features['global']['numeric']
+    inputs.append(branches)
+    output_types += [tf.float32] * len(branches)
+    output_names += branches
+    output_shapes += [(None, 1)] * len(branches)
+
+    # Features related to charged constituents
+    max_size = features['ch']['max_size']
+    inputs.append(max_size)
+    branches = features['ch']['numeric']
+    inputs.append(branches)
+    output_types += [tf.bool] + [tf.float32] * len(branches)
+    output_names += ['ch_mask'] + branches
+    output_shapes += [(None, max_size)] * (1 + len(branches))
 
     data = tf.numpy_function(
-        func=_read_root_file,
-        inp=[path, branches], Tout=[tf.float32] * len(branches),
+        func=_read_root_file, inp=inputs, Tout=output_types,
         name='read_root'
     )
-    for column in data:
-        column.set_shape((None, 1))
-    return {k: v for k, v in zip(branches, data)}
+    for column, shape in zip(data, output_shapes):
+        column.set_shape(shape)
+    return {k: v for k, v in zip(output_names, data)}

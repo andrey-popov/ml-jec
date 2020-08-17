@@ -33,13 +33,60 @@ CUSTOM_TRANSFORMS = {
     ],
     'area': [],
     'num_pv': [],
-    'rho': []
+    'rho': [],
+    'ch_pt': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 0.1}
+        }
+    ],
+    'ch_eta': [],
+    'ch_phi': [],
+    'ch_dxy': [
+        {'type': 'abs'},
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 1e-3}
+        }
+    ],
+    'ch_dxy_significance': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 1.}
+        }
+    ],
+    'ch_dz': [
+        {'type': 'abs'},
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 1e-3}
+        }
+    ],
+    'ch_num_hits': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 5.}
+        }
+    ],
+    'ch_num_pixel_hits': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 5.}
+        }
+    ],
+    'ch_lost_hits': [],
+    'ch_norm_chi2': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 1.}
+        }
+    ]
 }
 
 
 def build_transform(
     sources: Iterable[str], save_path: str
-) -> Dict[str, Union[np.ndarray, awkward.JaggedArray]]:
+) -> Dict[str, np.ndarray]:
     """Construct preprocessing transformation for input features.
 
     Apply predefined non-linear transformations.  Then rescale all
@@ -72,6 +119,7 @@ def build_transform(
     for feature, values in data.items():
         transforms = []
         values = values.astype(np.float32)
+        values = values.flatten()
 
         # Apply all custom transformations
         for cfg in CUSTOM_TRANSFORMS[feature]:
@@ -81,6 +129,12 @@ def build_transform(
             elif cfg['type'] == 'arcsinh':
                 scale = cfg['params']['scale']
                 values = np.arcsinh(values / scale)
+            elif cfg['type'] == 'log':
+                values = np.log(values)
+            else:
+                raise RuntimeError(
+                    'Unknown transformation type "{}".'.format(cfg['type'])
+                )
 
         # Scale the transformed feature to the range [0, 1]
         loc = float(values.min())
