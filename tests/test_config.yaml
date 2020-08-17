@@ -19,9 +19,8 @@ features:
 
 model:
   head:
-    type: plain
-    num_layers: 2
-    num_units: 16
+    type: mlp
+    num_units: [16, 16, 1]
 
 loss: mae
 
