@@ -36,7 +36,7 @@ def build_model(config: Mapping) -> keras.Model:
     if model_type == 'mlp':
         out = _apply_mlp(
             inputs,
-            num_units=head_config['num_units'],
+            num_units=head_config['num_units'][:-1],
             batch_norm=head_config.get('batch_norm', False),
             dropout=head_config.get('dropout', 0),
             name_prefix='head_'
@@ -44,11 +44,12 @@ def build_model(config: Mapping) -> keras.Model:
     elif model_type == 'resnet':
         out = _apply_resnet(
             inputs,
-            num_units=head_config['num_units'],
+            num_units=head_config['num_units'][:-1],
             name_prefix='head_'
         )
     else:
         raise RuntimeError(f'Unknown model type "{model_type}".')
+    out = Dense(1)(out)
     model = keras.Model(inputs=inputs, outputs=out)
 
     if config['loss'] == 'huber':
@@ -69,29 +70,26 @@ def _apply_mlp(
     Args:
         inputs:  Inputs to the network fragment.
         num_units:  Numbers of units in each layer.
-        batch_norm:  Whether to apply batch normalization.  Never
-            applied in the last layer.
-        dropout:  Dropout rate.  Disabled if 0.  Never applied in the
-            last layer.
+        batch_norm:  Whether to apply batch normalization.
+        dropout:  Dropout rate.  Disabled if 0.
         name_prefix:  Name prefix for layers.
     """
 
     x = inputs
     for layer_index, layer_num_units in enumerate(num_units):
-        is_last_layer = layer_index == len(num_units) - 1
         x = Dense(
             layer_num_units, kernel_initializer='he_uniform',
-            use_bias=not batch_norm or is_last_layer,
+            use_bias=not batch_norm,
             name=name_prefix + f'dense_{layer_index + 1}'
         )(x)
-        if batch_norm and not is_last_layer:
+        if batch_norm:
             x = BatchNormalization(
                 scale=False, name=name_prefix + f'batch_norm_{layer_index + 1}'
             )(x)
         x = Activation(
             'relu', name=name_prefix + f'activation_{layer_index + 1}'
         )(x)
-        if dropout > 0. and not is_last_layer:
+        if dropout > 0.:
             x = Dropout(
                 dropout, name=name_prefix + f'dropout_{layer_index + 1}'
             )(x)
