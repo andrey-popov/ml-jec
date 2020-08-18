@@ -20,7 +20,7 @@ features:
 model:
   head:
     type: mlp
-    num_units: [16, 16, 1]
+    num_units: [16, 16]
 
 loss: mae
 

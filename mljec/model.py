@@ -31,26 +31,13 @@ def build_model(config: Mapping) -> keras.Model:
 
     head_config = model_config['head']
     inputs = keras.Input(shape=(num_features, ), name='global_numeric')
-    model_type = head_config['type']
-    assert head_config['num_units'][-1] == 1
-    if model_type == 'mlp':
-        out = _apply_mlp(
-            inputs,
-            num_units=head_config['num_units'][:-1],
-            batch_norm=head_config.get('batch_norm', False),
-            dropout=head_config.get('dropout', 0),
-            name_prefix='head_'
-        )
-    elif model_type == 'resnet':
-        out = _apply_resnet(
-            inputs,
-            num_units=head_config['num_units'][:-1],
-            name_prefix='head_'
-        )
-    else:
-        raise RuntimeError(f'Unknown model type "{model_type}".')
-    out = Dense(1)(out)
-    model = keras.Model(inputs=inputs, outputs=out)
+    outputs = _apply_dense_from_config(
+        inputs, head_config, name_prefix='head_'
+    )
+
+    # Automatically add the output unit
+    outputs = Dense(1)(outputs)
+    model = keras.Model(inputs=inputs, outputs=outputs)
 
     if config['loss'] == 'huber':
         loss = keras.losses.Huber(math.log(2))
@@ -59,6 +46,40 @@ def build_model(config: Mapping) -> keras.Model:
 
     model.compile('adam', loss=loss)
     return model
+
+
+def _apply_dense_from_config(
+    inputs: tf.Tensor, config: Mapping, name_prefix: str = ''
+) -> tf.Tensor:
+    """Wrapper around _apply_mlp and _apply_resnet.
+
+    Args:
+        inputs:  Inputs to the network fragment.
+        config:  Configuration for the network fragment.
+        name_prefix: Name prefix for layers.
+
+    Return:
+        Output of the fragment.
+    """
+
+    model_type = config['type']
+    if model_type == 'mlp':
+        outputs = _apply_mlp(
+            inputs,
+            num_units=config['num_units'],
+            batch_norm=config.get('batch_norm', False),
+            dropout=config.get('dropout', 0),
+            name_prefix=name_prefix
+        )
+    elif model_type == 'resnet':
+        outputs = _apply_resnet(
+            inputs,
+            num_units=config['num_units'],
+            name_prefix=name_prefix
+        )
+    else:
+        raise RuntimeError(f'Unknown model type "{model_type}".')
+    return outputs
 
 
 def _apply_mlp(
@@ -73,6 +94,9 @@ def _apply_mlp(
         batch_norm:  Whether to apply batch normalization.
         dropout:  Dropout rate.  Disabled if 0.
         name_prefix:  Name prefix for layers.
+
+    Return:
+        Output of the fragment.
     """
 
     x = inputs
@@ -106,6 +130,9 @@ def _apply_resnet(
         inputs:  Inputs for the network fragment.
         num_units:  Numbers of units in each layer.
         name_prefix:  Name prefix for layers.
+
+    Return:
+        Output of the fragment.
 
     The skip connections will include trainable projections if the
     dimensions of layers with odd indices don't match.
