@@ -287,7 +287,8 @@ def _read_root_file(
     results.append(_create_mask(data[b'ch_size'], max_size_ch))
     for branch in branches_ch_numeric:
         results.append(
-            data[branch].pad(max_size_ch).regular().astype(np.float32)
+            data[branch].pad(max_size_ch, clip=True).fillna(0.).regular()
+                        .astype(np.float32)
         )
     return results
 

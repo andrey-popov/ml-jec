@@ -5,8 +5,27 @@ from typing import List, Mapping
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (
-    Activation, Add, BatchNormalization, Dense, Dropout
+    Activation, Add, BatchNormalization, Concatenate, Dense, Dropout
 )
+
+
+class MaskedSum(keras.layers.Layer):
+    """Layer that sums over temporal slices, with a mask.
+
+    Input tensor is summed along axis 1, while only including indices
+    enabled in the mask.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def call(self, inputs: tf.Tensor, mask: tf.Tensor) -> tf.Tensor:
+        conv_mask = tf.expand_dims(tf.cast(mask, tf.float32), axis=-1)
+        result = tf.math.reduce_sum(
+            tf.math.multiply_no_nan(inputs, conv_mask),
+            axis=1
+        )
+        return result
 
 
 def build_model(config: Mapping) -> keras.Model:
@@ -27,17 +46,36 @@ def build_model(config: Mapping) -> keras.Model:
         return model
 
     features = config['features']
-    num_features = len(features['global']['numeric'])
 
-    head_config = model_config['head']
-    inputs = keras.Input(shape=(num_features, ), name='global_numeric')
+    # Charged constituents
+    inputs_ch_numeric = keras.Input(
+        shape=(features['ch']['max_size'], len(features['ch']['numeric'])),
+        name='ch_numeric'
+    )
+    outputs_ch = _apply_dense_from_config(
+        inputs_ch_numeric, model_config['ch'], name_prefix='ch_'
+    )
+    mask_ch = keras.Input(
+        shape=(features['ch']['max_size'],), name='ch_mask'
+    )
+    outputs_ch = MaskedSum(name='ch_sum')(outputs_ch, mask=mask_ch)
+
+    # Head
+    inputs_global_numeric = keras.Input(
+        shape=(len(features['global']['numeric']),),
+        name='global_numeric'
+    )
+    inputs_head = Concatenate()([inputs_global_numeric, outputs_ch])
     outputs = _apply_dense_from_config(
-        inputs, head_config, name_prefix='head_'
+        inputs_head, model_config['head'], name_prefix='head_'
     )
 
     # Automatically add the output unit
     outputs = Dense(1)(outputs)
-    model = keras.Model(inputs=inputs, outputs=outputs)
+    model = keras.Model(
+        inputs=[inputs_global_numeric, mask_ch, inputs_ch_numeric],
+        outputs=outputs
+    )
 
     if config['loss'] == 'huber':
         loss = keras.losses.Huber(math.log(2))

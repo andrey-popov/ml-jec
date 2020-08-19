@@ -18,6 +18,9 @@ features:
     ]
 
 model:
+  ch:
+    type: mlp
+    num_units: [10, 10]
   head:
     type: mlp
     num_units: [16, 16]
