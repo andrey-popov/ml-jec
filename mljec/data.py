@@ -10,6 +10,9 @@ import uproot
 import yaml
 
 
+MaybeRaggedTensor = Union[tf.Tensor, tf.RaggedTensor]
+
+
 def build_datasets(
     config: Mapping
 ) -> Tuple[Dict, tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
@@ -74,7 +77,7 @@ def build_datasets(
 
 def _build_dataset(
     paths: Iterable, features: Mapping,
-    transforms: Mapping[str, Callable[[tf.Tensor], tf.Tensor]],
+    transforms: Mapping[str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]],
     repeat: bool = False, batch_size: int = 128,
     map_num_parallel: Union[int, None] = None
 ) -> tf.data.Dataset:
@@ -113,32 +116,9 @@ def _build_dataset(
     return dataset
 
 
-def _create_mask(lengths: np.ndarray, max_length: int) -> np.ndarray:
-    """Create 2D mask that selects given numbers of elements.
-
-    The mask is a 2D array of boolean values.  Each row starts with the
-    number of True elements as given by an input array; they are
-    followed by False elements to pad the row.
-
-    Args:
-        lengths:  1D array the number of elements to be selected on
-            each row.
-        max_length:  The length of the rows.
-
-    Return:
-        Boolean mask for shape (len(lengths), max_length).
-    """
-
-    indices = np.repeat(
-        np.arange(max_length)[np.newaxis, :],
-        len(lengths), axis=0
-    )
-    return indices < lengths[:, np.newaxis]
-
-
 def _create_transform_op(
     transform_config: Sequence[Mapping]
-) -> Callable[[tf.Tensor], tf.Tensor]:
+) -> Callable[[MaybeRaggedTensor], MaybeRaggedTensor]:
     """Construct preprocessing operation for one feature.
 
     Args:
@@ -203,9 +183,10 @@ def _find_splits(
 
 
 def _preprocess(
-    batch: Mapping[str, tf.Tensor], features: Mapping,
-    transforms: Mapping[str, Callable[[tf.Tensor], tf.Tensor]] = {}
-) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:
+    batch: Mapping[str, MaybeRaggedTensor], features: Mapping,
+    transforms: Mapping[
+        str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]] = {}
+) -> Tuple[Dict[str, MaybeRaggedTensor], tf.Tensor]:
     """Perform preprocessing for a batch.
 
     Args:
@@ -235,17 +216,13 @@ def _preprocess(
         axis=1
     )
     ch_numeric_block = tf.concat(
-        [
-            tf.expand_dims(batch[name], axis=2)
-            for name in features['ch']['numeric']
-        ],
+        [batch[name] for name in features['ch']['numeric']],
         axis=2
     )
 
     return (
         {
             'global_numeric': global_numeric_block,
-            'ch_mask': batch['ch_mask'],
             'ch_numeric': ch_numeric_block
         },
         target
@@ -254,7 +231,7 @@ def _preprocess(
 
 def _read_root_file(
     path: bytes, branches_global_numeric: np.ndarray,
-    max_size_ch: int, branches_ch_numeric: np.ndarray
+    branches_ch_numeric: np.ndarray
 ) -> List[np.ndarray]:
     """Read a single ROOT file.
 
@@ -262,16 +239,14 @@ def _read_root_file(
         path:  Path the file.
         branches_global_numeric:  Names of branches with global numeric
             features, represented with bytes.
-        max_size_ch:  Maximal number of charged constituents to
-            consider.
         branches_ch_numeric:  Names of branches with numeric features of
             charged constituents, represented with bytes.
 
     Return:
-        NumPy arrays for all specified branches.  The order matches
-        the order of branches in the arguments.  The arrays for charged
-        constituents are preceeded by a boolean mask that indicates the
-        presence of the constituents.
+        Rank 1 NumPy arrays for all specified branches.  The order
+        matches the order of branches in the arguments.  The arrays for
+        constituents are flattened.  They are preceeded with an array
+        containing the number of constituents in each jet.
     """
 
     input_file = uproot.open(path.decode())
@@ -283,19 +258,16 @@ def _read_root_file(
 
     results = []
     for branch in branches_global_numeric:
-        results.append(np.expand_dims(data[branch].astype(np.float32), axis=1))
-    results.append(_create_mask(data[b'ch_size'], max_size_ch))
+        results.append(data[branch].astype(np.float32))
+    results.append(data[b'ch_size'].astype(np.int32))
     for branch in branches_ch_numeric:
-        results.append(
-            data[branch].pad(max_size_ch, clip=True).fillna(0.).regular()
-                        .astype(np.float32)
-        )
+        results.append(data[branch].astype(np.float32).flatten())
     return results
 
 
 def _read_root_file_wrapper(
     path: str, features: Mapping
-) -> Dict[str, tf.Tensor]:
+) -> Dict[str, MaybeRaggedTensor]:
     """Wrapper around _read_root_file.
 
     Specify what branches to read, call _read_root_file, and convert the
@@ -314,31 +286,34 @@ def _read_root_file_wrapper(
     inputs = [path]
     output_types = []
     output_names = []
-    output_shapes = []
 
     # Global features.  In addition to those specified in the mapping
     # given to this function, include pt_gen, which is needed to
     # compute the regression target.
-    branches = ['pt_gen']
-    branches += features['global']['numeric']
-    inputs.append(branches)
-    output_types += [tf.float32] * len(branches)
-    output_names += branches
-    output_shapes += [(None, 1)] * len(branches)
+    global_numeric = ['pt_gen'] + features['global']['numeric']
+    inputs.append(global_numeric)
+    output_types += [tf.float32] * len(global_numeric)
+    output_names += global_numeric
 
     # Features related to charged constituents
-    max_size = features['ch']['max_size']
-    inputs.append(max_size)
     branches = features['ch']['numeric']
     inputs.append(branches)
-    output_types += [tf.bool] + [tf.float32] * len(branches)
-    output_names += ['ch_mask'] + branches
-    output_shapes += [(None, max_size)] * (1 + len(branches))
+    output_types += [tf.int32] + [tf.float32] * len(branches)
+    output_names += ['ch_size'] + branches
 
     data = tf.numpy_function(
         func=_read_root_file, inp=inputs, Tout=output_types,
         name='read_root'
     )
-    for column, shape in zip(data, output_shapes):
-        column.set_shape(shape)
-    return {k: v for k, v in zip(output_names, data)}
+    data = {k: v for k, v in zip(output_names, data)}
+    for values in data.values():
+        values.set_shape((None,))
+
+    ch_size = data.pop('ch_size')
+    for branch in features['ch']['numeric']:
+        data[branch] = tf.RaggedTensor.from_row_lengths(
+            values=data[branch], row_lengths=ch_size
+        )
+    for branch, values in data.items():
+        data[branch] = tf.expand_dims(values, axis=-1)
+    return data

@@ -11,7 +11,6 @@ features:
   global:
     numeric: [pt, eta, phi, mass, area, num_pv, rho]
   ch:
-    max_size: 64
     numeric: [
       ch_pt, ch_eta, ch_phi, ch_dxy, ch_dxy_significance, ch_dz,
       ch_num_hits, ch_num_pixel_hits, ch_lost_hits, ch_norm_chi2

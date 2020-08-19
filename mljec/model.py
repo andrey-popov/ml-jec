@@ -5,27 +5,27 @@ from typing import List, Mapping
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (
-    Activation, Add, BatchNormalization, Concatenate, Dense, Dropout
+    Activation, Add, BatchNormalization, Concatenate, Dense, Dropout,
+    TimeDistributed
 )
 
+from .data import MaybeRaggedTensor
 
-class MaskedSum(keras.layers.Layer):
-    """Layer that sums over temporal slices, with a mask.
 
-    Input tensor is summed along axis 1, while only including indices
-    enabled in the mask.
-    """
+class Sum(keras.layers.Layer):
+    """Layer that sums input tensor along an axis."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, axis=1, **kwargs):
         super().__init__(**kwargs)
+        self.axis = axis
 
-    def call(self, inputs: tf.Tensor, mask: tf.Tensor) -> tf.Tensor:
-        conv_mask = tf.expand_dims(tf.cast(mask, tf.float32), axis=-1)
-        result = tf.math.reduce_sum(
-            tf.math.multiply_no_nan(inputs, conv_mask),
-            axis=1
-        )
-        return result
+    def call(self, inputs: MaybeRaggedTensor) -> tf.Tensor:
+        return tf.math.reduce_sum(inputs, axis=self.axis)
+
+    def get_config(self):
+        config = super().get_config()
+        config['axis'] = self.axis
+        return config
 
 
 def build_model(config: Mapping) -> keras.Model:
@@ -49,16 +49,23 @@ def build_model(config: Mapping) -> keras.Model:
 
     # Charged constituents
     inputs_ch_numeric = keras.Input(
-        shape=(features['ch']['max_size'], len(features['ch']['numeric'])),
-        name='ch_numeric'
+        shape=(None, len(features['ch']['numeric'])),
+        ragged=True, name='ch_numeric'
     )
-    outputs_ch = _apply_dense_from_config(
-        inputs_ch_numeric, model_config['ch'], name_prefix='ch_'
+    inputs_ch_numeric_single = keras.Input(
+        shape=(inputs_ch_numeric.shape[-1],), name='ch_numeric_single'
     )
-    mask_ch = keras.Input(
-        shape=(features['ch']['max_size'],), name='ch_mask'
+    outputs_ch_single = _apply_dense_from_config(
+        inputs_ch_numeric_single, model_config['ch'], name_prefix='ch_'
     )
-    outputs_ch = MaskedSum(name='ch_sum')(outputs_ch, mask=mask_ch)
+    submodel_ch = keras.Model(
+        inputs=inputs_ch_numeric_single, outputs=outputs_ch_single,
+        name='ch'
+    )
+    outputs_ch = TimeDistributed(
+        submodel_ch, name='ch_distributed'
+    )(inputs_ch_numeric)
+    outputs_ch = Sum(name='ch_sum')(outputs_ch)
 
     # Head
     inputs_global_numeric = keras.Input(
@@ -73,7 +80,7 @@ def build_model(config: Mapping) -> keras.Model:
     # Automatically add the output unit
     outputs = Dense(1)(outputs)
     model = keras.Model(
-        inputs=[inputs_global_numeric, mask_ch, inputs_ch_numeric],
+        inputs=[inputs_global_numeric, inputs_ch_numeric],
         outputs=outputs
     )
 

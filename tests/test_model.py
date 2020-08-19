@@ -1,24 +1,18 @@
 import math
 
 import numpy as np
+import tensorflow as tf
 from tensorflow import keras
 
 import mljec
 
 
-def test_masked_sum():
-    inputs = [
-        [[1] * 4, [2] * 4, [math.nan] * 4],
-        [[10] * 4, [math.nan] * 4, [math.nan] * 4],
-        [[math.nan] * 4] * 3
-    ]
-    inputs = np.array(inputs, dtype=np.float32)
-    mask = [
-        [True, True, False],
-        [True, False, False],
-        [False, False, False]
-    ]
-    result = mljec.model.MaskedSum()(inputs, mask)
+def test_sum_layer():
+    inputs = tf.RaggedTensor.from_row_lengths(
+        values=[[1] * 4, [2] * 4, [10] * 4],
+        row_lengths=[2, 1, 0]
+    )
+    result = mljec.model.Sum()(inputs)
     expected_result = np.array(
         [[3] * 4, [10] * 4, [0] * 4],
         dtype=np.float32
