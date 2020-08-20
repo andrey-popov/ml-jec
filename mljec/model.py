@@ -1,4 +1,3 @@
-from collections.abc import Sequence
 import math
 from typing import List, Mapping
 
@@ -6,7 +5,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (
     Activation, Add, BatchNormalization, Concatenate, Dense, Dropout,
-    TimeDistributed
+    Embedding, TimeDistributed
 )
 
 from .data import MaybeRaggedTensor
@@ -28,13 +27,17 @@ class Sum(keras.layers.Layer):
         return config
 
 
-def build_model(config: Mapping) -> keras.Model:
+def build_model(
+    config: Mapping, cardinalities: Mapping[str, int]
+) -> keras.Model:
     """Construct model specified in the configuration.
 
     Also create optimizer and set the loss function.
 
     Args:
         config:  Dictionary representing configuration file.
+        cardinalities:  Cardinalities of categorical features (needed to
+            construct their embeddings).
 
     Return:
         Compiled model.
@@ -48,31 +51,52 @@ def build_model(config: Mapping) -> keras.Model:
     features = config['features']
 
     # Charged constituents
-    inputs_ch_numeric = keras.Input(
-        shape=(None, len(features['ch']['numeric'])),
-        ragged=True, name='ch_numeric'
+    inputs_ch_numerical = keras.Input(
+        shape=(None, len(features['ch']['numerical'])),
+        ragged=True, name='ch_numerical'
     )
-    inputs_ch_numeric_single = keras.Input(
-        shape=(inputs_ch_numeric.shape[-1],), name='ch_numeric_single'
+    inputs_ch_categorical = {
+        feature: keras.Input(
+            shape=(None,), ragged=True, name=feature
+        )
+        for feature in features['ch']['categorical']
+    }
+    embeddings_ch = {
+        feature: Embedding(
+            cardinalities[feature], model_config['ch']['embeddings'][feature],
+            name=feature + '_embedding'
+        )(inputs)
+        for feature, inputs in inputs_ch_categorical.items()
+    }
+    inputs_ch = Concatenate(name='ch_concatenate')(
+        [inputs_ch_numerical]
+        + [embeddings_ch[feature] for feature in features['ch']['categorical']]
     )
+    size_ch_single = len(features['ch']['numerical']) + sum(
+        model_config['ch']['embeddings'][feature]
+        for feature in features['ch']['categorical']
+    )
+    inputs_ch_single = keras.Input(shape=(size_ch_single,))
     outputs_ch_single = _apply_dense_from_config(
-        inputs_ch_numeric_single, model_config['ch'], name_prefix='ch_'
+        inputs_ch_single, model_config['ch'], name_prefix='ch_'
     )
     submodel_ch = keras.Model(
-        inputs=inputs_ch_numeric_single, outputs=outputs_ch_single,
+        inputs=inputs_ch_single, outputs=outputs_ch_single,
         name='ch'
     )
     outputs_ch = TimeDistributed(
         submodel_ch, name='ch_distributed'
-    )(inputs_ch_numeric)
+    )(inputs_ch)
     outputs_ch = Sum(name='ch_sum')(outputs_ch)
 
     # Head
-    inputs_global_numeric = keras.Input(
-        shape=(len(features['global']['numeric']),),
-        name='global_numeric'
+    inputs_global_numerical = keras.Input(
+        shape=(len(features['global']['numerical']),),
+        name='global_numerical'
     )
-    inputs_head = Concatenate()([inputs_global_numeric, outputs_ch])
+    inputs_head = Concatenate(name='head_concatenate')(
+        [inputs_global_numerical, outputs_ch]
+    )
     outputs = _apply_dense_from_config(
         inputs_head, model_config['head'], name_prefix='head_'
     )
@@ -80,7 +104,10 @@ def build_model(config: Mapping) -> keras.Model:
     # Automatically add the output unit
     outputs = Dense(1)(outputs)
     model = keras.Model(
-        inputs=[inputs_global_numeric, inputs_ch_numeric],
+        inputs=(
+            [inputs_global_numerical, inputs_ch_numerical]
+            + list(inputs_ch_categorical.values())
+        ),
         outputs=outputs
     )
 

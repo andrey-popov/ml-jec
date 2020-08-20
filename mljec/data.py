@@ -1,4 +1,5 @@
 import copy
+import itertools
 import os
 from typing import (
     Callable, Dict, Mapping, Iterable, List, Sequence, Tuple, Union
@@ -23,8 +24,9 @@ def build_datasets(
 
     Return:
         Metadata and the three datasets.  The metadata include  numbers
-        of examples in each set and a dictionary of input features (as
-        read from the configuration).
+        of examples in each set, a dictionary with names of input
+        features (as read from the configuration), and a dictionary with
+        cardinalities of categorical features.
     """
 
     data_config = config['data']
@@ -39,19 +41,15 @@ def build_datasets(
     ]
 
     features = config['features']
-    with tf.io.gfile.GFile(
+    transforms, cardinalities = _create_transforms(
         os.path.join(data_config['location'], 'transform.yaml')
-    ) as f:
-        transforms = yaml.safe_load(f.read())
-    transforms = {
-        feature: _create_transform_op(transform_config)
-        for feature, transform_config in transforms.items()
-    }
+    )
 
     splits = _find_splits(data_config['split'], len(data_files))
     metadata = {}
     metadata['counts'] = {}
     metadata['features'] = features
+    metadata['cardinalities'] = cardinalities
 
     datasets = {}
     for set_label, file_range in splits.items():
@@ -116,10 +114,10 @@ def _build_dataset(
     return dataset
 
 
-def _create_transform_op(
+def _create_transform_op_numerical(
     transform_config: Sequence[Mapping]
 ) -> Callable[[MaybeRaggedTensor], MaybeRaggedTensor]:
-    """Construct preprocessing operation for one feature.
+    """Construct preprocessing operation for one numerical feature.
 
     Args:
         transform_config:  Sequence of preprocessing steps.  Each step
@@ -131,24 +129,93 @@ def _create_transform_op(
         Callable that applies the transformation.
     """
 
+    step_ops = []
+    for step in transform_config:
+        transform_type = step['type']
+        if transform_type == 'abs':
+            step_ops.append(tf.abs)
+        elif transform_type == 'arcsinh':
+            step_ops.append(
+                lambda x: tf.math.asinh(x / step['params']['scale'])
+            )
+        elif transform_type == 'log':
+            step_ops.append(tf.log)
+        elif transform_type == 'linear':
+            step_ops.append(
+                lambda x: (x - step['params']['loc']) / step['params']['scale']
+            )
+        else:
+            raise RuntimeError(
+                f'Unknown transformation type "{transform_type}".'
+            )
+
     def op(x):
-        for step in transform_config:
-            transform_type = step['type']
-            if transform_type == 'abs':
-                x = tf.abs(x)
-            elif transform_type == 'arcsinh':
-                x = tf.math.asinh(x / step['params']['scale'])
-            elif transform_type == 'log':
-                x = tf.math.log(x)
-            elif transform_type == 'linear':
-                x = (x - step['params']['loc']) / step['params']['scale']
-            else:
-                raise RuntimeError(
-                    f'Unknown transformation type "{transform_type}".'
-                )
+        for step_op in step_ops:
+            x = step_op(x)
         return x
 
     return op
+
+
+def _create_transform_op_categorical(
+    allowed_values: Sequence[int]
+) -> Callable[[MaybeRaggedTensor], MaybeRaggedTensor]:
+    """Construct preprocessing operation for one categorical feature.
+
+    The operation maps unique values of the feature to consecutive
+    integers starting from 0.
+
+    Args:
+        allowed_values:  Allowed values for the feature.  Their order is
+            respected in the mapping.
+
+    Return:
+        Callable that applies the transformation.
+    """
+
+    initializer = tf.lookup.KeyValueTensorInitializer(
+        allowed_values, tf.range(len(allowed_values)), key_dtype=tf.int32
+    )
+    mapping = tf.lookup.StaticHashTable(initializer, -1)
+
+    def op(x):
+        # StaticHashTable doesn't accept RaggedTensor directly
+        return tf.ragged.map_flat_values(mapping.lookup, x)
+
+    return op
+
+
+def _create_transforms(
+    path: str
+) -> Tuple[
+    Dict[str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]],
+    Dict[str, int]
+]:
+    """Create preprocessing operations.
+
+    Args:
+        path:  Path to YAML configuration file that defines the
+            transformations.
+
+    Return:
+        Dictionary with preprocessing operations for individual
+        features and a dictionary with cardinalities of categorical
+        features.
+    """
+
+    with tf.io.gfile.GFile(path) as f:
+        transform_defs = yaml.safe_load(f.read())
+    transforms = {
+        feature: _create_transform_op_numerical(transform_config)
+        for feature, transform_config in transform_defs['numerical'].items()
+    }
+    cardinalities = {}
+    for feature, allowed_values in transform_defs['categorical'].items():
+        transforms[feature] = _create_transform_op_categorical(
+            allowed_values
+        )
+        cardinalities[feature] = len(allowed_values)
+    return transforms, cardinalities
 
 
 def _find_splits(
@@ -210,37 +277,40 @@ def _preprocess(
             transform = transforms[feature_name]
             batch[feature_name] = transform(column)
 
-    # Concatenate numeric features into blocks
-    global_numeric_block = tf.concat(
-        [batch[name] for name in features['global']['numeric']],
+    # Concatenate numerical features into blocks
+    global_numerical_block = tf.concat(
+        [batch[name] for name in features['global']['numerical']],
         axis=1
     )
-    ch_numeric_block = tf.concat(
-        [batch[name] for name in features['ch']['numeric']],
+    ch_numerical_block = tf.concat(
+        [batch[name] for name in features['ch']['numerical']],
         axis=2
     )
 
-    return (
-        {
-            'global_numeric': global_numeric_block,
-            'ch_numeric': ch_numeric_block
-        },
-        target
-    )
+    inputs = {
+        'global_numerical': global_numerical_block,
+        'ch_numerical': ch_numerical_block
+    }
+    for name in features['ch']['categorical']:
+        inputs[name] = batch[name]
+
+    return (inputs, target)
 
 
 def _read_root_file(
-    path: bytes, branches_global_numeric: np.ndarray,
-    branches_ch_numeric: np.ndarray
+    path: bytes, branches_global_numerical: np.ndarray,
+    branches_ch_numerical: np.ndarray, branches_ch_categorical: np.ndarray
 ) -> List[np.ndarray]:
     """Read a single ROOT file.
 
     Args:
         path:  Path the file.
-        branches_global_numeric:  Names of branches with global numeric
-            features, represented with bytes.
-        branches_ch_numeric:  Names of branches with numeric features of
-            charged constituents, represented with bytes.
+        branches_global_numerical:  Names of branches with global
+            numerical features, represented with bytes.
+        branches_ch_numerical:  Names of branches with numerical
+            features of charged constituents, represented with bytes.
+        branches_ch_categorical:  Names of branches with categorical
+            features of charged constituents, represented with bytes.
 
     Return:
         Rank 1 NumPy arrays for all specified branches.  The order
@@ -251,17 +321,22 @@ def _read_root_file(
 
     input_file = uproot.open(path.decode())
     tree = input_file['Jets']
-    branches_to_read = branches_global_numeric.tolist()
-    branches_to_read.append(b'ch_size')
-    branches_to_read += branches_ch_numeric.tolist()
+    branches_to_read = (
+        branches_global_numerical.tolist()
+        + [b'ch_size'] + branches_ch_numerical.tolist()
+        + branches_ch_categorical.tolist()
+    )
     data = tree.arrays(branches=branches_to_read)
 
     results = []
-    for branch in branches_global_numeric:
+    for branch in branches_global_numerical:
         results.append(data[branch].astype(np.float32))
+
     results.append(data[b'ch_size'].astype(np.int32))
-    for branch in branches_ch_numeric:
+    for branch in branches_ch_numerical:
         results.append(data[branch].astype(np.float32).flatten())
+    for branch in branches_ch_categorical:
+        results.append(data[branch].astype(np.int32).flatten())
     return results
 
 
@@ -279,8 +354,10 @@ def _read_root_file_wrapper(
 
     Return:
         Dictionary that maps branch names to the corresponding tensors.
-        In addition to requested branches, this dictionary includes a
-        mask indicating the presence of constituents.
+        Shapes of output tensors (parentheses denote ragged dimensions):
+        - global numeric: (BATCH, 1),
+        - per-constituent numeric: (BATCH, (None), 1),
+        - per-constituent categorical: (BATCH, (None)).
     """
 
     inputs = [path]
@@ -290,16 +367,20 @@ def _read_root_file_wrapper(
     # Global features.  In addition to those specified in the mapping
     # given to this function, include pt_gen, which is needed to
     # compute the regression target.
-    global_numeric = ['pt_gen'] + features['global']['numeric']
-    inputs.append(global_numeric)
-    output_types += [tf.float32] * len(global_numeric)
-    output_names += global_numeric
+    global_numerical = ['pt_gen'] + features['global']['numerical']
+    inputs.append(global_numerical)
+    output_types += [tf.float32] * len(global_numerical)
+    output_names += global_numerical
 
     # Features related to charged constituents
-    branches = features['ch']['numeric']
-    inputs.append(branches)
-    output_types += [tf.int32] + [tf.float32] * len(branches)
-    output_names += ['ch_size'] + branches
+    branches_num = features['ch']['numerical']
+    branches_cat = features['ch']['categorical']
+    inputs.extend([branches_num, branches_cat])
+    output_types.extend(
+        [tf.int32] + [tf.float32] * len(branches_num)
+        + [tf.int32] * len(branches_cat)
+    )
+    output_names += ['ch_size'] + branches_num + branches_cat
 
     data = tf.numpy_function(
         func=_read_root_file, inp=inputs, Tout=output_types,
@@ -310,10 +391,13 @@ def _read_root_file_wrapper(
         values.set_shape((None,))
 
     ch_size = data.pop('ch_size')
-    for branch in features['ch']['numeric']:
+    for branch in itertools.chain(
+        features['ch']['numerical'], features['ch']['categorical']
+    ):
         data[branch] = tf.RaggedTensor.from_row_lengths(
             values=data[branch], row_lengths=ch_size
         )
     for branch, values in data.items():
-        data[branch] = tf.expand_dims(values, axis=-1)
+        if branch not in features['ch']['categorical']:
+            data[branch] = tf.expand_dims(values, axis=-1)
     return data

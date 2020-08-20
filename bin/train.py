@@ -103,8 +103,8 @@ if __name__ == '__main__':
     train_dataset = train_dataset.prefetch(tf.data.experimental.AUTOTUNE)
     val_dataset = val_dataset.cache()
 
-    model = build_model(config)
-    print(model.summary())
+    model = build_model(config, metadata['cardinalities'])
+    model.summary()
     if args.plot_model:
         tf.keras.utils.plot_model(
             model, os.path.join(args.output, 'model.png'), dpi=300

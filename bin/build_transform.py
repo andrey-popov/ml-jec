@@ -14,9 +14,9 @@ import uproot
 import yaml
 
 
-# Predefined non-linear transformations for each feature.  Linear
-# scaling will be added automatically.
-CUSTOM_TRANSFORMS = {
+# Predefined non-linear transformations for each numerical feature.
+# Linear scaling will be added automatically.
+CUSTOM_TRANSFORMS_NUMERICAL = {
     'pt': [
         {
             'type': 'arcsinh',
@@ -83,6 +83,9 @@ CUSTOM_TRANSFORMS = {
     ]
 }
 
+# Categorical features.  Their unique values will be enumerated.
+CATECORICAL_FEATURES = ['ch_id', 'ch_pv_ass']
+
 
 def build_transform(
     sources: Iterable[str], save_path: str
@@ -99,10 +102,10 @@ def build_transform(
             transformations.
 
     Return:
-        Transformed features.
+        Transformed numerical features.
     """
 
-    branches = list(CUSTOM_TRANSFORMS.keys())
+    branches = list(CUSTOM_TRANSFORMS_NUMERICAL.keys()) + CATECORICAL_FEATURES
     shards = list(uproot.iterate(
         sources, 'Jets', branches=branches, entrysteps=math.inf
     ))
@@ -115,14 +118,15 @@ def build_transform(
         )
     del shards
 
-    transforms_all_features = {}
-    for feature, values in data.items():
+    transforms_all_numerical = {}
+    for feature in CUSTOM_TRANSFORMS_NUMERICAL.keys():
+        values = data[feature]
         transforms = []
         values = values.astype(np.float32)
         values = values.flatten()
 
         # Apply all custom transformations
-        for cfg in CUSTOM_TRANSFORMS[feature]:
+        for cfg in CUSTOM_TRANSFORMS_NUMERICAL[feature]:
             transforms.append(cfg)
             if cfg['type'] == 'abs':
                 values = np.abs(values)
@@ -147,10 +151,26 @@ def build_transform(
         values /= scale
 
         data[feature] = values
-        transforms_all_features[feature] = transforms
+        transforms_all_numerical[feature] = transforms
+
+    categorical_values = {}
+    for feature in CATECORICAL_FEATURES:
+        values = np.unique(data[feature].flatten())
+        categorical_values[feature] = sorted(values.tolist())
 
     with open(save_path, 'w') as f:
-        yaml.safe_dump(transforms_all_features, f)
+        yaml.safe_dump(
+            {
+                'numerical': transforms_all_numerical,
+                'categorical': categorical_values
+            },
+            f
+        )
+
+    # Drop categorical features from the returned arrays as there is no
+    # point in plotting them
+    for feature in CATECORICAL_FEATURES:
+        data.pop(feature)
     return data
 
 

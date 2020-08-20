@@ -9,15 +9,20 @@ data:
 
 features:
   global:
-    numeric: [pt, eta, phi, mass, area, num_pv, rho]
+    numerical: [pt, eta, phi, mass, area, num_pv, rho]
   ch:
-    numeric: [
+    numerical: [
       ch_pt, ch_eta, ch_phi, ch_dxy, ch_dxy_significance, ch_dz,
       ch_num_hits, ch_num_pixel_hits, ch_lost_hits, ch_norm_chi2
     ]
+    categorical: [ch_id, ch_pv_ass]
 
 model:
   ch:
+    embeddings: {
+      ch_id: 3,
+      ch_pv_ass: 2
+    }
     type: mlp
     num_units: [10, 10]
   head:

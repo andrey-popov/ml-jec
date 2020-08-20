@@ -1,114 +1,118 @@
-area:
-- params:
-    loc: 0.0
-    scale: 0.8377580642700195
-  type: linear
-ch_dxy:
-- type: abs
-- params:
-    scale: 0.001
-  type: arcsinh
-- params:
-    loc: 0.0
-    scale: 12.545397758483887
-  type: linear
-ch_dxy_significance:
-- params:
-    scale: 1.0
-  type: arcsinh
-- params:
-    loc: 0.0
-    scale: 9.883373260498047
-  type: linear
-ch_dz:
-- type: abs
-- params:
-    scale: 0.001
-  type: arcsinh
-- params:
-    loc: 0.0
-    scale: 13.928839683532715
-  type: linear
-ch_eta:
-- params:
-    loc: -2.985808849334717
-    scale: 6.202337741851807
-  type: linear
-ch_lost_hits:
-- params:
-    loc: -1.0
-    scale: 3.0
-  type: linear
-ch_norm_chi2:
-- params:
-    scale: 1.0
-  type: arcsinh
-- params:
-    loc: 0.0
-    scale: 6.230485439300537
-  type: linear
-ch_num_hits:
-- params:
-    scale: 5.0
-  type: arcsinh
-- params:
-    loc: 0.0
-    scale: 3.0179290771484375
-  type: linear
-ch_num_pixel_hits:
-- params:
-    scale: 5.0
-  type: arcsinh
-- params:
-    loc: 0.0
-    scale: 1.4436354637145996
-  type: linear
-ch_phi:
-- params:
-    loc: -3.141592264175415
-    scale: 6.283184766769409
-  type: linear
-ch_pt:
-- params:
-    scale: 0.1
-  type: arcsinh
-- params:
-    loc: 0.0002759695053100586
-    scale: 11.780537247657776
-  type: linear
-eta:
-- params:
-    loc: -5.113057613372803
-    scale: 10.222169876098633
-  type: linear
-mass:
-- params:
-    scale: 10.0
-  type: arcsinh
-- params:
-    loc: -5.81264503125567e-05
-    scale: 4.855455350876582
-  type: linear
-num_pv:
-- params:
-    loc: 1.0
-    scale: 105.0
-  type: linear
-phi:
-- params:
-    loc: -3.1415464878082275
-    scale: 6.283127069473267
-  type: linear
-pt:
-- params:
-    scale: 10.0
-  type: arcsinh
-- params:
-    loc: 0.001962279202416539
-    scale: 7.2959527026396245
-  type: linear
-rho:
-- params:
-    loc: 0.0
-    scale: 73.87381744384766
-  type: linear
+categorical:
+  ch_id: [-211, -13, -11, 11, 13, 211]
+  ch_pv_ass: [0, 1, 4, 5, 6, 7]
+numerical:
+  area:
+  - params:
+      loc: 0.0
+      scale: 0.8377580642700195
+    type: linear
+  ch_dxy:
+  - type: abs
+  - params:
+      scale: 0.001
+    type: arcsinh
+  - params:
+      loc: 0.0
+      scale: 12.545397758483887
+    type: linear
+  ch_dxy_significance:
+  - params:
+      scale: 1.0
+    type: arcsinh
+  - params:
+      loc: 0.0
+      scale: 9.883373260498047
+    type: linear
+  ch_dz:
+  - type: abs
+  - params:
+      scale: 0.001
+    type: arcsinh
+  - params:
+      loc: 0.0
+      scale: 13.928839683532715
+    type: linear
+  ch_eta:
+  - params:
+      loc: -2.985808849334717
+      scale: 6.202337741851807
+    type: linear
+  ch_lost_hits:
+  - params:
+      loc: -1.0
+      scale: 3.0
+    type: linear
+  ch_norm_chi2:
+  - params:
+      scale: 1.0
+    type: arcsinh
+  - params:
+      loc: 0.0
+      scale: 6.230485439300537
+    type: linear
+  ch_num_hits:
+  - params:
+      scale: 5.0
+    type: arcsinh
+  - params:
+      loc: 0.0
+      scale: 3.0179290771484375
+    type: linear
+  ch_num_pixel_hits:
+  - params:
+      scale: 5.0
+    type: arcsinh
+  - params:
+      loc: 0.0
+      scale: 1.4436354637145996
+    type: linear
+  ch_phi:
+  - params:
+      loc: -3.141592264175415
+      scale: 6.283184766769409
+    type: linear
+  ch_pt:
+  - params:
+      scale: 0.1
+    type: arcsinh
+  - params:
+      loc: 0.0002759695053100586
+      scale: 11.780537247657776
+    type: linear
+  eta:
+  - params:
+      loc: -5.113057613372803
+      scale: 10.222169876098633
+    type: linear
+  mass:
+  - params:
+      scale: 10.0
+    type: arcsinh
+  - params:
+      loc: -5.81264503125567e-05
+      scale: 4.855455350876582
+    type: linear
+  num_pv:
+  - params:
+      loc: 1.0
+      scale: 105.0
+    type: linear
+  phi:
+  - params:
+      loc: -3.1415464878082275
+      scale: 6.283127069473267
+    type: linear
+  pt:
+  - params:
+      scale: 10.0
+    type: arcsinh
+  - params:
+      loc: 0.001962279202416539
+      scale: 7.2959527026396245
+    type: linear
+  rho:
+  - params:
+      loc: 0.0
+      scale: 73.87381744384766
+    type: linear
