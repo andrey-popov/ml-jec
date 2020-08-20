@@ -1,4 +1,4 @@
-import math
+from collections import OrderedDict
 
 import numpy as np
 import tensorflow as tf
@@ -36,3 +36,27 @@ def test_resnet():
     )
     model = keras.Model(inputs=inputs, outputs=outputs)
     assert model.count_params() == 435
+
+
+def test_deep_set():
+    config = {
+        'embeddings': {
+            'ch_id': 3,
+            'ch_pv_ass': 2
+        },
+        'type': 'mlp',
+        'num_units': [10, 10]
+    }
+    cardinalities = {'ch_id': 6, 'ch_pv_ass': 6}
+    inputs_numerical = keras.Input(shape=(None, 10), ragged=True)
+    inputs_categorical = OrderedDict()
+    for feature in cardinalities:
+        inputs_categorical[feature] = keras.Input(shape=(None,), ragged=True)
+    outputs = mljec.model._apply_deep_set(
+        inputs_numerical, inputs_categorical, config, cardinalities, 'deep_set'
+    )
+    model = keras.Model(
+        inputs=[inputs_numerical] + list(inputs_categorical.values()),
+        outputs=outputs
+    )
+    assert model.count_params() == 300

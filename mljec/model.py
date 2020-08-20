@@ -1,5 +1,5 @@
 import math
-from typing import List, Mapping
+from typing import List, Mapping, OrderedDict
 
 import tensorflow as tf
 from tensorflow import keras
@@ -55,39 +55,15 @@ def build_model(
         shape=(None, len(features['ch']['numerical'])),
         ragged=True, name='ch_numerical'
     )
-    inputs_ch_categorical = {
-        feature: keras.Input(
+    inputs_ch_categorical = OrderedDict()
+    for feature in features['ch']['categorical']:
+        inputs_ch_categorical[feature] = keras.Input(
             shape=(None,), ragged=True, name=feature
         )
-        for feature in features['ch']['categorical']
-    }
-    embeddings_ch = {
-        feature: Embedding(
-            cardinalities[feature], model_config['ch']['embeddings'][feature],
-            name=feature + '_embedding'
-        )(inputs)
-        for feature, inputs in inputs_ch_categorical.items()
-    }
-    inputs_ch = Concatenate(name='ch_concatenate')(
-        [inputs_ch_numerical]
-        + [embeddings_ch[feature] for feature in features['ch']['categorical']]
+    outputs_ch = _apply_deep_set(
+        inputs_ch_numerical, inputs_ch_categorical,
+        model_config['ch'], cardinalities, 'ch'
     )
-    size_ch_single = len(features['ch']['numerical']) + sum(
-        model_config['ch']['embeddings'][feature]
-        for feature in features['ch']['categorical']
-    )
-    inputs_ch_single = keras.Input(shape=(size_ch_single,))
-    outputs_ch_single = _apply_dense_from_config(
-        inputs_ch_single, model_config['ch'], name_prefix='ch_'
-    )
-    submodel_ch = keras.Model(
-        inputs=inputs_ch_single, outputs=outputs_ch_single,
-        name='ch'
-    )
-    outputs_ch = TimeDistributed(
-        submodel_ch, name='ch_distributed'
-    )(inputs_ch)
-    outputs_ch = Sum(name='ch_sum')(outputs_ch)
 
     # Head
     inputs_global_numerical = keras.Input(
@@ -101,8 +77,7 @@ def build_model(
         inputs_head, model_config['head'], name_prefix='head_'
     )
 
-    # Automatically add the output unit
-    outputs = Dense(1)(outputs)
+    outputs = Dense(1)(outputs)  # Output unit
     model = keras.Model(
         inputs=(
             [inputs_global_numerical, inputs_ch_numerical]
@@ -118,6 +93,67 @@ def build_model(
 
     model.compile('adam', loss=loss)
     return model
+
+
+def _apply_deep_set(
+    inputs_numerical: tf.RaggedTensor,
+    inputs_categorical: OrderedDict[str, tf.RaggedTensor],
+    config: Mapping, cardinalities: Mapping[str, int], name: str
+) -> tf.Tensor:
+    """Apply a DeepSet-like fragment to constituents of certain type.
+
+    Apply the same subnetwork to each constituent and then sum its
+    outputs over constituents.
+
+    Args:
+        inputs_numerical:  Numerical features.
+        inputs_categorical:  Categorical features.  The order fixes the
+            order of inputs to the dense subnetwork.
+        config:  Fragment of the model configuration that describes this
+            block.  Must include information about embeddings for
+            categorical features and configuration for the dense
+            subnetwork.  This mapping is also forwarded to
+            _apply_dense_from_config.
+        cardinalities:  Cardinalities of categorical features.  Needed
+            to construct the embeddings.
+        name:  Name fragment for layers.
+
+    Return:
+        Output of the fragment.
+    """
+
+    # Apply embeddings to categorical features and concatenate all
+    # features for each constituent forming dense blocks
+    embeddings = {
+        feature: Embedding(
+            cardinalities[feature], config['embeddings'][feature],
+            name=feature + '_embedding'
+        )(inputs)
+        for feature, inputs in inputs_categorical.items()
+    }
+    inputs_all = Concatenate(name=f'{name}_concatenate')(
+        [inputs_numerical]
+        + [embeddings[feature] for feature in inputs_categorical.keys()]
+    )
+
+    # Construct per-constituent subnetwork as a submodel and apply it to
+    # each constituent or slice using TimeDistributed layer
+    inputs_slice = keras.Input(shape=(inputs_all.shape[-1],))
+    outputs_slice = _apply_dense_from_config(
+        inputs_slice, config, name_prefix=f'{name}_'
+    )
+    submodel_slice = keras.Model(
+        inputs=inputs_slice, outputs=outputs_slice,
+        name=name
+    )
+    outputs = TimeDistributed(
+        submodel_slice, name=f'{name}_distributed'
+    )(inputs_all)
+
+    # Sum over constituents
+    outputs = Sum(name=f'{name}_sum')(outputs)
+
+    return outputs
 
 
 def _apply_dense_from_config(
