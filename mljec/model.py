@@ -1,5 +1,6 @@
 import math
-from typing import List, Mapping, OrderedDict
+import os
+from typing import List, Mapping, OrderedDict, Union
 
 import tensorflow as tf
 from tensorflow import keras
@@ -88,7 +89,7 @@ def build_model(
     )
 
     outputs = Dense(1)(outputs)  # Output unit
-    model = keras.Model(inputs=inputs_all, outputs=outputs)
+    model = keras.Model(inputs=inputs_all, outputs=outputs, name='full')
 
     if config['loss'] == 'huber':
         loss = keras.losses.Huber(math.log(2))
@@ -97,6 +98,40 @@ def build_model(
 
     model.compile('adam', loss=loss)
     return model
+
+
+def summarize_model(
+    model: keras.Model, fig_dir: Union[str, None] = None
+) -> None:
+    """Print an optionally plot a model.
+
+    Do this for the main model and all submodels wrapped in
+    TimeDistributed layers.
+
+    Args:
+        model:  Model as created by build_model function.
+        fig_dir:  Directory for plots of the model.  If None, do not
+            produce the plots.
+    """
+
+    submodels = []
+    for layer in model.layers:
+        if isinstance(layer, TimeDistributed):
+            submodels.append(layer.layer)
+
+    for submodel in submodels:
+        submodel.summary()
+    model.summary()
+
+    if fig_dir is not None:
+        for submodel in submodels:
+            keras.utils.plot_model(
+                submodel, os.path.join(fig_dir, f'model_{submodel.name}.png'),
+                dpi=300
+            )
+        keras.utils.plot_model(
+            model, os.path.join(fig_dir, 'model_full.png'), dpi=300
+        )
 
 
 def _apply_deep_set(

@@ -11,7 +11,7 @@ import numpy as np
 import tensorflow as tf
 import yaml
 
-from mljec import build_datasets, build_model, plot_history
+from mljec import build_datasets, build_model, plot_history, summarize_model
 
 
 def train(
@@ -104,11 +104,9 @@ if __name__ == '__main__':
     val_dataset = val_dataset.cache()
 
     model = build_model(config, metadata['cardinalities'])
-    model.summary()
-    if args.plot_model:
-        tf.keras.utils.plot_model(
-            model, os.path.join(args.output, 'model.png'), dpi=300
-        )
+    summarize_model(
+        model, fig_dir=args.output if args.plot_model else None
+    )
 
     history = train(
         config, model,
