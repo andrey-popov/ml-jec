@@ -26,7 +26,7 @@ def test_read_root():
     branches_ch_cat = np.array([b'ch_id'])
     arrays = mljec.data._read_root_file(
         b'data/shards/1.root', branches_global,
-        branches_ch_num, branches_ch_cat
+        b'ch_size', branches_ch_num, branches_ch_cat
     )
 
     n = len(branches_global) + 1 + len(branches_ch_num) + len(branches_ch_cat)

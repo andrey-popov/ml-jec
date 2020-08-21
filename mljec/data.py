@@ -139,7 +139,7 @@ def _create_transform_op_numerical(
                 lambda x: tf.math.asinh(x / step['params']['scale'])
             )
         elif transform_type == 'log':
-            step_ops.append(tf.log)
+            step_ops.append(tf.math.log)
         elif transform_type == 'linear':
             step_ops.append(
                 lambda x: (x - step['params']['loc']) / step['params']['scale']
@@ -277,29 +277,34 @@ def _preprocess(
             transform = transforms[feature_name]
             batch[feature_name] = transform(column)
 
-    # Concatenate numerical features into blocks
-    global_numerical_block = tf.concat(
-        [batch[name] for name in features['global']['numerical']],
-        axis=1
-    )
-    ch_numerical_block = tf.concat(
-        [batch[name] for name in features['ch']['numerical']],
-        axis=2
-    )
+    inputs = {}
+    constituent_types = list(features.keys())
+    constituent_types.remove('global')
 
-    inputs = {
-        'global_numerical': global_numerical_block,
-        'ch_numerical': ch_numerical_block
-    }
-    for name in features['ch']['categorical']:
-        inputs[name] = batch[name]
+    # Concatenate numerical features into blocks
+    block = tf.concat(
+        [batch[name] for name in features['global']['numerical']],
+        axis=1, name='global_numerical'
+    )
+    inputs['global_numerical'] = block
+    for constituent_type in constituent_types:
+        block = tf.concat(
+            [batch[name] for name in features[constituent_type]['numerical']],
+            axis=2, name=f'{constituent_type}_numerical'
+        )
+        inputs[f'{constituent_type}_numerical'] = block
+
+    # Propagate categorical features directly
+    for constituent_type in constituent_types:
+        for name in features[constituent_type]['categorical']:
+            inputs[name] = batch[name]
 
     return (inputs, target)
 
 
 def _read_root_file(
     path: bytes, branches_global_numerical: np.ndarray,
-    branches_ch_numerical: np.ndarray, branches_ch_categorical: np.ndarray
+    *constituents_args
 ) -> List[np.ndarray]:
     """Read a single ROOT file.
 
@@ -307,36 +312,47 @@ def _read_root_file(
         path:  Path the file.
         branches_global_numerical:  Names of branches with global
             numerical features, represented with bytes.
-        branches_ch_numerical:  Names of branches with numerical
-            features of charged constituents, represented with bytes.
-        branches_ch_categorical:  Names of branches with categorical
-            features of charged constituents, represented with bytes.
+        constituents_args:  Names of branches for an arbitrary number of
+            types of constituents.  For each type, three arguments must
+            be provided, in this order:
+            - name of the branch with the number of constituents of that
+              type in each jet, represented with bytes,
+            - NumPy array with names of branches with numerical
+              features for that type of constituents,
+            - NumPy array with names of branches with categorical
+              features for that type of constituents.
 
     Return:
         Rank 1 NumPy arrays for all specified branches.  The order
         matches the order of branches in the arguments.  The arrays for
-        constituents are flattened.  They are preceeded with an array
-        containing the number of constituents in each jet.
+        constituents are flattened.
     """
+
+    assert len(constituents_args) % 3 == 0
+    constituents_blocks = [
+        constituents_args[i:i + 3]
+        for i in range(0, len(constituents_args), 3)
+    ]
 
     input_file = uproot.open(path.decode())
     tree = input_file['Jets']
-    branches_to_read = (
-        branches_global_numerical.tolist()
-        + [b'ch_size'] + branches_ch_numerical.tolist()
-        + branches_ch_categorical.tolist()
-    )
+    branches_to_read = []
+    branches_to_read += branches_global_numerical.tolist()
+    for block in constituents_blocks:
+        branches_to_read.append(block[0])
+        branches_to_read.extend(itertools.chain(block[1], block[2]))
     data = tree.arrays(branches=branches_to_read)
 
     results = []
     for branch in branches_global_numerical:
         results.append(data[branch].astype(np.float32))
 
-    results.append(data[b'ch_size'].astype(np.int32))
-    for branch in branches_ch_numerical:
-        results.append(data[branch].astype(np.float32).flatten())
-    for branch in branches_ch_categorical:
-        results.append(data[branch].astype(np.int32).flatten())
+    for block in constituents_blocks:
+        results.append(data[block[0]].astype(np.int32))
+        for branch in block[1]:
+            results.append(data[branch].astype(np.float32).flatten())
+        for branch in block[2]:
+            results.append(data[branch].astype(np.int32).flatten())
     return results
 
 
@@ -363,24 +379,31 @@ def _read_root_file_wrapper(
     inputs = [path]
     output_types = []
     output_names = []
+    all_numerical = []
 
     # Global features.  In addition to those specified in the mapping
     # given to this function, include pt_gen, which is needed to
     # compute the regression target.
-    global_numerical = ['pt_gen'] + features['global']['numerical']
-    inputs.append(global_numerical)
-    output_types += [tf.float32] * len(global_numerical)
-    output_names += global_numerical
+    branches_num = ['pt_gen'] + features['global']['numerical']
+    inputs.append(branches_num)
+    output_types += [tf.float32] * len(branches_num)
+    output_names += branches_num
+    all_numerical += branches_num
 
-    # Features related to charged constituents
-    branches_num = features['ch']['numerical']
-    branches_cat = features['ch']['categorical']
-    inputs.extend([branches_num, branches_cat])
-    output_types.extend(
-        [tf.int32] + [tf.float32] * len(branches_num)
-        + [tf.int32] * len(branches_cat)
-    )
-    output_names += ['ch_size'] + branches_num + branches_cat
+    # Features of constituents
+    block_names = list(features.keys())
+    block_names.remove('global')
+    for block in block_names:
+        branches_num = features[block]['numerical']
+        branches_cat = features[block]['categorical']
+        inputs.extend([f'{block}_size', branches_num, branches_cat])
+        output_types.extend(
+            [tf.int32]
+            + [tf.float32] * len(branches_num)
+            + [tf.int32] * len(branches_cat)
+        )
+        output_names += [f'{block}_size'] + branches_num + branches_cat
+        all_numerical += branches_num
 
     data = tf.numpy_function(
         func=_read_root_file, inp=inputs, Tout=output_types,
@@ -390,14 +413,15 @@ def _read_root_file_wrapper(
     for values in data.values():
         values.set_shape((None,))
 
-    ch_size = data.pop('ch_size')
-    for branch in itertools.chain(
-        features['ch']['numerical'], features['ch']['categorical']
-    ):
-        data[branch] = tf.RaggedTensor.from_row_lengths(
-            values=data[branch], row_lengths=ch_size
-        )
-    for branch, values in data.items():
-        if branch not in features['ch']['categorical']:
-            data[branch] = tf.expand_dims(values, axis=-1)
+    for block in block_names:
+        size = data.pop(f'{block}_size')
+        for branch in itertools.chain(
+            features[block]['numerical'], features[block]['categorical']
+        ):
+            data[branch] = tf.RaggedTensor.from_row_lengths(
+                values=data[branch], row_lengths=size
+            )
+
+    for branch in all_numerical:
+        data[branch] = tf.expand_dims(data[branch], axis=-1)
     return data

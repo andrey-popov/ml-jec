@@ -16,6 +16,12 @@ features:
       ch_num_hits, ch_num_pixel_hits, ch_lost_hits, ch_norm_chi2
     ]
     categorical: [ch_id, ch_pv_ass]
+  ne:
+    numerical: [ne_pt, ne_eta, ne_phi, ne_hcal_frac]
+    categorical: [ne_id]
+  sv:
+    numerical: [sv_mass, sv_pt, sv_distance, sv_significance, sv_num_tracks]
+    categorical: []
 
 model:
   ch:
@@ -25,6 +31,16 @@ model:
     }
     type: mlp
     num_units: [10, 10]
+  ne:
+    embeddings: {
+      ne_id: 3
+    }
+    type: mlp
+    num_units: [10, 10]
+  sv:
+    embeddings: {}
+    type: mlp
+    num_units: [5]
   head:
     type: mlp
     num_units: [16, 16]

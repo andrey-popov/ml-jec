@@ -80,11 +80,50 @@ CUSTOM_TRANSFORMS_NUMERICAL = {
             'type': 'arcsinh',
             'params': {'scale': 1.}
         }
+    ],
+    'ne_pt': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 0.1}
+        }
+    ],
+    'ne_eta' :[],
+    'ne_phi': [],
+    'ne_hcal_frac': [],
+    'sv_mass': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 0.1}
+        }
+    ],
+    'sv_pt': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 0.1}
+        }
+    ],
+    'sv_distance': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 0.01}
+        }
+    ],
+    'sv_significance': [
+        {
+            'type': 'arcsinh',
+            'params': {'scale': 1.}
+        }
+    ],
+    'sv_num_tracks': [
+        {'type': 'log'}
     ]
 }
 
 # Categorical features.  Their unique values will be enumerated.
-CATECORICAL_FEATURES = ['ch_id', 'ch_pv_ass']
+CATECORICAL_FEATURES = [
+    'ch_id', 'ch_pv_ass',
+    'ne_id'
+]
 
 
 def build_transform(

@@ -1,6 +1,7 @@
 categorical:
   ch_id: [-211, -13, -11, 11, 13, 211]
   ch_pv_ass: [0, 1, 4, 5, 6, 7]
+  ne_id: [1, 2, 22, 130]
 numerical:
   area:
   - params:
@@ -93,6 +94,29 @@ numerical:
       loc: -5.81264503125567e-05
       scale: 4.855455350876582
     type: linear
+  ne_eta:
+  - params:
+      loc: -5.098910331726074
+      scale: 10.196905136108398
+    type: linear
+  ne_hcal_frac:
+  - params:
+      loc: 0.0
+      scale: 1.0
+    type: linear
+  ne_phi:
+  - params:
+      loc: -3.141592264175415
+      scale: 6.283184766769409
+    type: linear
+  ne_pt:
+  - params:
+      scale: 0.1
+    type: arcsinh
+  - params:
+      loc: 0.1565255969762802
+      scale: 10.707077994942665
+    type: linear
   num_pv:
   - params:
       loc: 1.0
@@ -115,4 +139,42 @@ numerical:
   - params:
       loc: 0.0
       scale: 73.87381744384766
+    type: linear
+  sv_distance:
+  - params:
+      scale: 0.01
+    type: arcsinh
+  - params:
+      loc: 0.16684111952781677
+      scale: 10.369731336832047
+    type: linear
+  sv_mass:
+  - params:
+      scale: 0.1
+    type: arcsinh
+  - params:
+      loc: 0.5476638078689575
+      scale: 9.300969958305359
+    type: linear
+  sv_num_tracks:
+  - type: log
+  - params:
+      loc: 0.6931471824645996
+      scale: 2.602689743041992
+    type: linear
+  sv_pt:
+  - params:
+      scale: 0.1
+    type: arcsinh
+  - params:
+      loc: 2.8338065147399902
+      scale: 8.12505292892456
+    type: linear
+  sv_significance:
+  - params:
+      scale: 1.0
+    type: arcsinh
+  - params:
+      loc: 0.009486527182161808
+      scale: 8.984619765542448
     type: linear

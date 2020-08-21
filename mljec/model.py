@@ -49,42 +49,46 @@ def build_model(
         return model
 
     features = config['features']
+    inputs_all = []
 
-    # Charged constituents
-    inputs_ch_numerical = keras.Input(
-        shape=(None, len(features['ch']['numerical'])),
-        ragged=True, name='ch_numerical'
-    )
-    inputs_ch_categorical = OrderedDict()
-    for feature in features['ch']['categorical']:
-        inputs_ch_categorical[feature] = keras.Input(
-            shape=(None,), ragged=True, name=feature
+    # Constituents of different types
+    constituent_types = sorted(model_config.keys())  # Ensure order
+    constituent_types.remove('head')
+    outputs_constituents = []
+    for constituent_type in constituent_types:
+        inputs_numerical = keras.Input(
+            shape=(None, len(features[constituent_type]['numerical'])),
+            ragged=True, name=f'{constituent_type}_numerical'
         )
-    outputs_ch = _apply_deep_set(
-        inputs_ch_numerical, inputs_ch_categorical,
-        model_config['ch'], cardinalities, 'ch'
-    )
+        inputs_categorical = OrderedDict()
+        for feature in features[constituent_type]['categorical']:
+            inputs_categorical[feature] = keras.Input(
+                shape=(None,), ragged=True, name=feature
+            )
+        inputs_all.append(inputs_numerical)
+        inputs_all.extend(inputs_categorical.values())
+
+        outputs = _apply_deep_set(
+            inputs_numerical, inputs_categorical,
+            model_config[constituent_type], cardinalities, constituent_type
+        )
+        outputs_constituents.append(outputs)
 
     # Head
     inputs_global_numerical = keras.Input(
         shape=(len(features['global']['numerical']),),
         name='global_numerical'
     )
+    inputs_all.append(inputs_global_numerical)
     inputs_head = Concatenate(name='head_concatenate')(
-        [inputs_global_numerical, outputs_ch]
+        [inputs_global_numerical] + outputs_constituents
     )
     outputs = _apply_dense_from_config(
         inputs_head, model_config['head'], name_prefix='head_'
     )
 
     outputs = Dense(1)(outputs)  # Output unit
-    model = keras.Model(
-        inputs=(
-            [inputs_global_numerical, inputs_ch_numerical]
-            + list(inputs_ch_categorical.values())
-        ),
-        outputs=outputs
-    )
+    model = keras.Model(inputs=inputs_all, outputs=outputs)
 
     if config['loss'] == 'huber':
         loss = keras.losses.Huber(math.log(2))
@@ -131,14 +135,19 @@ def _apply_deep_set(
         )(inputs)
         for feature, inputs in inputs_categorical.items()
     }
-    inputs_all = Concatenate(name=f'{name}_concatenate')(
+    inputs_all = (
         [inputs_numerical]
         + [embeddings[feature] for feature in inputs_categorical.keys()]
     )
+    if len(inputs_all) > 1:
+        inputs_concat = Concatenate(name=f'{name}_concatenate')(inputs_all)
+    else:
+        # Concatenate doesn't work with a single input
+        inputs_concat = inputs_all[0]
 
     # Construct per-constituent subnetwork as a submodel and apply it to
     # each constituent or slice using TimeDistributed layer
-    inputs_slice = keras.Input(shape=(inputs_all.shape[-1],))
+    inputs_slice = keras.Input(shape=(inputs_concat.shape[-1],))
     outputs_slice = _apply_dense_from_config(
         inputs_slice, config, name_prefix=f'{name}_'
     )
@@ -148,7 +157,7 @@ def _apply_deep_set(
     )
     outputs = TimeDistributed(
         submodel_slice, name=f'{name}_distributed'
-    )(inputs_all)
+    )(inputs_concat)
 
     # Sum over constituents
     outputs = Sum(name=f'{name}_sum')(outputs)
