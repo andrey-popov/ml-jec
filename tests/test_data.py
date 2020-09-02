@@ -48,7 +48,10 @@ def test_read_root_wrapper():
     branches_ch_num = ['ch_pt', 'ch_eta', 'ch_lost_hits']
     branches_ch_cat = ['ch_id']
     features = mljec.Features({
-        'global': {'numerical': branches_global},
+        'global': {
+            'numerical': branches_global,
+            'numerical_branches': branches_global + ['pt_gen']
+        },
         'ch': {
             'numerical': branches_ch_num,
             'categorical': branches_ch_cat
@@ -87,7 +90,10 @@ def test_dataset():
     branches_ch_num = ['ch_pt', 'ch_eta', 'ch_lost_hits']
     branches_ch_cat = ['ch_id']
     features = mljec.Features({
-        'global': {'numerical': branches_global},
+        'global': {
+            'numerical': branches_global,
+            'numerical_branches': branches_global + ['pt_gen']
+        },
         'ch': {
             'numerical': branches_ch_num,
             'categorical': branches_ch_cat
@@ -143,7 +149,8 @@ def test_datasets_full():
         },
         'features': {
             'global': {
-                'numerical': ['pt', 'eta', 'mass', 'rho']
+                'numerical': ['pt', 'eta', 'mass', 'rho'],
+                'numerical_branches': ['pt', 'eta', 'mass', 'rho', 'pt_gen']
             },
             'ch': {
                 'numerical': ['ch_pt', 'ch_eta', 'ch_lost_hits'],

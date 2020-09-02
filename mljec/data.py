@@ -105,6 +105,10 @@ def _build_dataset(
     dataset = dataset.prefetch(1)
 
     dataset = dataset.map(
+        lambda batch: _create_synthetic_features(batch, features),
+        num_parallel_calls=map_num_parallel
+    )
+    dataset = dataset.map(
         lambda batch: _preprocess(batch, features, transforms),
         num_parallel_calls=map_num_parallel
     )
@@ -114,6 +118,33 @@ def _build_dataset(
         dataset = dataset.repeat()
     dataset = dataset.batch(batch_size)
     return dataset
+
+
+def _create_synthetic_features(
+    batch: Mapping[str, MaybeRaggedTensor], features: Features,
+) -> Dict[str, MaybeRaggedTensor]:
+    """Create synthetic features, inlcuding the regression target.
+
+    Args:
+        batch:  Tensors representing individual branches in the
+            current batch.
+        features:  Input features.
+
+    Return:
+        Dictionary with tensors representing individual input features
+        for the neural network.  The regression target is also included
+        under the name "target".
+    """
+
+    batch = copy.copy(batch)
+
+    # Always compute the target
+    batch['target'] = tf.math.log(batch['pt_gen'] / batch['pt'])
+
+    features_to_drop = set(batch.keys()) - features.all() - {'target'}
+    for feature in features_to_drop:
+        batch.pop(feature)
+    return batch
 
 
 def _create_transform_op_numerical(
@@ -269,10 +300,6 @@ def _preprocess(
         features are represented with a dictionary of tensors.
     """
 
-    # Target
-    target = tf.math.log(batch['pt_gen'] / batch['pt'])
-    batch.pop('pt_gen')
-
     # Apply preprocessing
     for feature_name, column in batch.items():
         if feature_name in transforms:
@@ -283,23 +310,23 @@ def _preprocess(
 
     # Concatenate numerical features into blocks
     block = tf.concat(
-        [batch[name] for name in features.get_numerical('global')],
+        [batch[name] for name in features.numerical('global')],
         axis=1, name='global_numerical'
     )
     inputs['global_numerical'] = block
     for constituent_type in features.constituent_types:
         block = tf.concat(
-            [batch[name] for name in features.get_numerical(constituent_type)],
+            [batch[name] for name in features.numerical(constituent_type)],
             axis=2, name=f'{constituent_type}_numerical'
         )
         inputs[f'{constituent_type}_numerical'] = block
 
     # Propagate categorical features directly
     for block in features.constituent_types | {'global'}:
-        for name in features.get_categorical(block):
+        for name in features.categorical(block):
             inputs[name] = batch[name]
 
-    return (inputs, target)
+    return (inputs, batch['target'])
 
 
 def _read_root_file(
@@ -387,11 +414,9 @@ def _read_root_file_wrapper(
     output_names = []
     all_numerical = []
 
-    # Global features.  In addition to those specified in the mapping
-    # given to this function, include pt_gen, which is needed to
-    # compute the regression target.
-    branches_num = ['pt_gen'] + features.get_numerical('global')
-    branches_cat = features.get_categorical('global')
+    # Global features
+    branches_num = features.numerical('global', branches=True)
+    branches_cat = features.categorical('global', branches=True)
     inputs.extend([branches_num, branches_cat])
     output_types.extend(
         [tf.float32] * len(branches_num)
@@ -402,8 +427,8 @@ def _read_root_file_wrapper(
 
     # Features of constituents
     for block in features.constituent_types:
-        branches_num = features.get_numerical(block)
-        branches_cat = features.get_categorical(block)
+        branches_num = features.numerical(block, branches=True)
+        branches_cat = features.categorical(block, branches=True)
         inputs.extend([f'{block}_size', branches_num, branches_cat])
         output_types.extend(
             [tf.int32]
@@ -424,7 +449,8 @@ def _read_root_file_wrapper(
     for block in features.constituent_types:
         size = data.pop(f'{block}_size')
         for branch in itertools.chain(
-            features.get_numerical(block), features.get_categorical(block)
+            features.numerical(block, branches=True),
+            features.categorical(block, branches=True)
         ):
             data[branch] = tf.RaggedTensor.from_row_lengths(
                 values=data[branch], row_lengths=size

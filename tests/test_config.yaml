@@ -10,6 +10,7 @@ data:
 features:
   global:
     numerical: [pt, eta, phi, mass, area, num_pv, rho]
+    numerical_branches: [pt, eta, phi, mass, area, num_pv, rho, pt_gen]
   ch:
     numerical: [
       ch_pt, ch_eta, ch_phi, ch_dxy, ch_dxy_significance, ch_dz,

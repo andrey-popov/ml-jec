@@ -59,11 +59,11 @@ def build_model(
     outputs_constituents = []
     for constituent_type in constituent_types:
         inputs_numerical = keras.Input(
-            shape=(None, len(features.get_numerical(constituent_type))),
+            shape=(None, len(features.numerical(constituent_type))),
             ragged=True, name=f'{constituent_type}_numerical'
         )
         inputs_categorical = OrderedDict()
-        for feature in features.get_categorical(constituent_type):
+        for feature in features.categorical(constituent_type):
             inputs_categorical[feature] = keras.Input(
                 shape=(None,), ragged=True, name=feature
             )
@@ -78,11 +78,11 @@ def build_model(
 
     # Head
     inputs_global_numerical = keras.Input(
-        shape=(len(features.get_numerical('global')),),
+        shape=(len(features.numerical('global')),),
         name='global_numerical'
     )
     inputs_global_categorical = OrderedDict()
-    for feature in features.get_categorical('global'):
+    for feature in features.categorical('global'):
         inputs_global_categorical[feature] = keras.Input(
             shape=(None,), name=feature
         )
