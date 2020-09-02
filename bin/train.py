@@ -6,6 +6,7 @@ import argparse
 import math
 import os
 import pickle
+from typing import Dict, List, Mapping
 
 import numpy as np
 import tensorflow as tf
@@ -15,14 +16,14 @@ from mljec import build_datasets, build_model, plot_history, summarize_model
 
 
 def train(
-    config, model,
-    train_dataset, train_dataset_size, val_dataset,
-    output_dir=''
-):
+    config: Mapping, model: tf.keras.Model,
+    train_dataset: tf.data.Dataset, train_dataset_size: int,
+    val_dataset: tf.data.Dataset, output_dir: str = ''
+) -> Dict[str, List[float]]:
     """Train a model.
 
     Args:
-        config:  Directory representing configuration file.
+        config:  Master configuration.
         model:  Model to train.
         train_dataset:  Training dataset.
         train_dataset_size:  Number of examples in the training dataset.

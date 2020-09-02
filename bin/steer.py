@@ -17,7 +17,7 @@ import subprocess
 import yaml
 
 
-def run_task(config_path):
+def run_task(config_path: str):
     with open(config_path) as f:
         config = yaml.safe_load(f)
     try:
@@ -55,4 +55,3 @@ if __name__ == '__main__':
     for path in args.configs:
         print(f'Running configuration "{path}"...')
         run_task(path)
-

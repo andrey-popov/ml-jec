@@ -1,5 +1,5 @@
 import copy
-from typing import List, Mapping, Set
+from typing import List, Mapping, Sequence, Set, Tuple, Union
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -86,14 +86,19 @@ class Features:
             return self._features[block]['numerical']
 
 
-def plot_history(config, history, save_path, ylim=(None, None), zoom=False):
+def plot_history(
+    config: Mapping, history: Mapping[str, Sequence[float]],
+    save_path: str,
+    ylim: Tuple[Union[float, None], Union[float, None]] = (None, None),
+    zoom: bool = False
+) -> None:
     """Plot training history.
 
     Plot the loss on the training and validation sets and mark points
     when the learning rate was adjusted.
 
     Args:
-        config:  Directory representing configuration file.
+        config:  Master configuration.
         history:  Dictionary with training history.
         save_path:  Save path for produced figure.
         ylim:  Manual range for y axis.  If not given, an automatic
@@ -136,4 +141,3 @@ def plot_history(config, history, save_path, ylim=(None, None), zoom=False):
 
     fig.savefig(save_path)
     plt.close(fig)
-
