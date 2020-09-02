@@ -125,6 +125,10 @@ def _create_synthetic_features(
 ) -> Dict[str, MaybeRaggedTensor]:
     """Create synthetic features, inlcuding the regression target.
 
+    After the synthetic features have been constructed, drop features
+    that were only needed as their depedents but not used as inputs to
+    the neural network.
+
     Args:
         batch:  Tensors representing individual branches in the
             current batch.
@@ -137,11 +141,57 @@ def _create_synthetic_features(
     """
 
     batch = copy.copy(batch)
+    features_nn = features.all()
+
+    def rel_pt(constituent_pt):
+        jet_pt = tf.expand_dims(batch['pt'], axis=1)
+        return constituent_pt / jet_pt
+
+    def deta(constituent_eta):
+        jet_eta = tf.expand_dims(batch['eta'], axis=1)
+        return (constituent_eta - jet_eta) * tf.math.sign(jet_eta)
+
+    def dphi(constituent_phi):
+        """Delta phi translated to range (-pi, pi]."""
+        jet_phi = tf.expand_dims(batch['phi'], axis=1)
+        delta = constituent_phi - jet_phi
+        # tf.where doesn't fully support ragged tensors
+        delta = delta.flat_values
+        delta = tf.where(delta > np.pi, delta - 2 * np.pi, delta)
+        delta = tf.where(delta < -np.pi, delta + 2 * np.pi, delta)
+        return tf.RaggedTensor.from_row_lengths(
+            delta, constituent_phi.row_lengths()
+        )
+
+    if 'ch_rel_pt' in features_nn:
+        batch['ch_rel_pt'] = rel_pt(batch['ch_pt'])
+    if 'ch_deta' in features_nn or 'ch_dr' in features_nn:
+        batch['ch_deta'] = deta(batch['ch_eta'])
+    if 'ch_dphi' in features_nn or 'ch_dr' in features_nn:
+        batch['ch_dphi'] = dphi(batch['ch_phi'])
+    if 'ch_dr' in features_nn:
+        batch['ch_dr'] = tf.math.sqrt(
+            tf.math.square(batch['ch_deta']) + tf.math.square(batch['ch_dphi'])
+        )
+
+    if 'ne_rel_pt' in features_nn:
+        batch['ne_rel_pt'] = rel_pt(batch['ne_pt'])
+    if 'ne_deta' in features_nn or 'ne_dr' in features_nn:
+        batch['ne_deta'] = deta(batch['ne_eta'])
+    if 'ne_dphi' in features_nn or 'ne_dr' in features_nn:
+        batch['ne_dphi'] = dphi(batch['ne_phi'])
+    if 'ne_dr' in features_nn:
+        batch['ne_dr'] = tf.math.sqrt(
+            tf.math.square(batch['ne_deta']) + tf.math.square(batch['ne_dphi'])
+        )
+
+    if 'sv_rel_pt' in features_nn:
+        batch['sv_rel_pt'] = rel_pt(batch['sv_pt'])
 
     # Always compute the target
     batch['target'] = tf.math.log(batch['pt_gen'] / batch['pt'])
 
-    features_to_drop = set(batch.keys()) - features.all() - {'target'}
+    features_to_drop = set(batch.keys()) - features_nn - {'target'}
     for feature in features_to_drop:
         batch.pop(feature)
     return batch

@@ -81,6 +81,39 @@ def test_read_root_wrapper():
         assert len(shape) == 2
 
 
+def test_synthetic_features():
+    features = mljec.Features({
+        'global': {
+            'numerical': ['pt'],
+            'numerical_branches': ['pt', 'phi', 'pt_gen']
+        },
+        'ch': {
+            'numerical': ['ch_dphi'],
+            'numerical_branches': ['ch_phi']
+        }
+    })
+    batch = {
+        'pt': tf.constant([30., 100.]),
+        'pt_gen': tf.constant([25., 110.]),
+        'phi': tf.constant([0.1, 3.1]),
+        'ch_phi': tf.ragged.constant([
+            [0.2, -0.1, -3.0], [3.0, -3.1]
+        ])
+    }
+    for name, values in batch.items():
+        batch[name] = tf.expand_dims(values, axis=-1)
+    processed_batch = mljec.data._create_synthetic_features(batch, features)
+    assert set(processed_batch.keys()) == {'pt', 'ch_dphi', 'target'}
+    assert processed_batch['target'].shape.as_list() == [2, 1]
+    assert processed_batch['ch_dphi'].shape.as_list() == [2, None, 1]
+    ref_dphi = np.expand_dims(
+        [0.1, -0.2, -3.1, -0.1, 2 * np.pi - 6.2], axis=-1
+    )
+    assert np.all(np.isclose(
+        processed_batch['ch_dphi'].flat_values.numpy(), ref_dphi
+    ))
+
+
 def test_dataset():
     input_files = [
         os.path.join('data', 'shards', f'{i + 1}.root')
@@ -95,7 +128,8 @@ def test_dataset():
             'numerical_branches': branches_global + ['pt_gen']
         },
         'ch': {
-            'numerical': branches_ch_num,
+            'numerical': branches_ch_num + ['ch_deta'],
+            'numerical_branches': branches_ch_num,
             'categorical': branches_ch_cat
         }
     })
@@ -122,7 +156,7 @@ def test_dataset():
     shape = inputs['ch_numerical'].shape
     assert (
         len(shape) == 3 and shape[0] == batch_size and shape[1] == None
-        and shape[2] == len(branches_ch_num)
+        and shape[2] == len(branches_ch_num) + 1
     )
     assert inputs['ch_numerical'].dtype == tf.float32
 
@@ -153,7 +187,8 @@ def test_datasets_full():
                 'numerical_branches': ['pt', 'eta', 'mass', 'rho', 'pt_gen']
             },
             'ch': {
-                'numerical': ['ch_pt', 'ch_eta', 'ch_lost_hits'],
+                'numerical': ['ch_pt', 'ch_eta', 'ch_lost_hits', 'ch_deta'],
+                'numerical_branches': ['ch_pt', 'ch_eta', 'ch_lost_hits'],
                 'categorical': ['ch_id']
             }
         }

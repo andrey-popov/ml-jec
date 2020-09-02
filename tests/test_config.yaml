@@ -14,14 +14,29 @@ features:
   ch:
     numerical: [
       ch_pt, ch_eta, ch_phi, ch_dxy, ch_dxy_significance, ch_dz,
+      ch_num_hits, ch_num_pixel_hits, ch_lost_hits, ch_norm_chi2,
+      ch_rel_pt, ch_deta, ch_dphi, ch_dr
+    ]
+    numerical_branches: [
+      ch_pt, ch_eta, ch_phi, ch_dxy, ch_dxy_significance, ch_dz,
       ch_num_hits, ch_num_pixel_hits, ch_lost_hits, ch_norm_chi2
     ]
     categorical: [ch_id, ch_pv_ass]
   ne:
-    numerical: [ne_pt, ne_eta, ne_phi, ne_hcal_frac]
+    numerical: [
+      ne_pt, ne_eta, ne_phi, ne_hcal_frac,
+      ne_rel_pt, ne_deta, ne_dphi, ne_dr
+    ]
+    numerical_branches: [ne_pt, ne_eta, ne_phi, ne_hcal_frac]
     categorical: [ne_id]
   sv:
-    numerical: [sv_mass, sv_pt, sv_distance, sv_significance, sv_num_tracks]
+    numerical: [
+      sv_mass, sv_pt, sv_distance, sv_significance, sv_num_tracks,
+      sv_rel_pt
+    ]
+    numerical_branches: [
+      sv_mass, sv_pt, sv_distance, sv_significance, sv_num_tracks
+    ]
 
 model:
   ch:
