@@ -81,9 +81,28 @@ def build_model(
         shape=(len(features.get_numerical('global')),),
         name='global_numerical'
     )
+    inputs_global_categorical = OrderedDict()
+    for feature in features.get_categorical('global'):
+        inputs_global_categorical[feature] = keras.Input(
+            shape=(None,), name=feature
+        )
+    embeddings_global = {
+        feature: Embedding(
+            cardinalities[feature],
+            model_config['head']['embeddings'][feature],
+            name=feature + '_embeddings'
+        )(inputs)
+        for feature, inputs in inputs_global_categorical.items()
+    }
     inputs_all.append(inputs_global_numerical)
+    inputs_all.extend(inputs_global_categorical.values())
     inputs_head = Concatenate(name='head_concatenate')(
-        [inputs_global_numerical] + outputs_constituents
+        [inputs_global_numerical]
+        + [
+            embeddings_global[feature]
+            for feature in inputs_global_categorical.values()
+        ]
+        + outputs_constituents
     )
     outputs = _apply_dense_from_config(
         inputs_head, model_config['head'], name_prefix='head_'

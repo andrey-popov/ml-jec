@@ -295,8 +295,8 @@ def _preprocess(
         inputs[f'{constituent_type}_numerical'] = block
 
     # Propagate categorical features directly
-    for constituent_type in features.constituent_types:
-        for name in features.get_categorical(constituent_type):
+    for block in features.constituent_types | {'global'}:
+        for name in features.get_categorical(block):
             inputs[name] = batch[name]
 
     return (inputs, target)
@@ -304,7 +304,7 @@ def _preprocess(
 
 def _read_root_file(
     path: bytes, branches_global_numerical: np.ndarray,
-    *constituents_args
+    branches_global_categorical: np.ndarray, *constituents_args
 ) -> List[np.ndarray]:
     """Read a single ROOT file.
 
@@ -312,6 +312,8 @@ def _read_root_file(
         path:  Path the file.
         branches_global_numerical:  Names of branches with global
             numerical features, represented with bytes.
+        branches_global_categorical:  Names of branches with global
+            categorical features, represented with bytes.
         constituents_args:  Names of branches for an arbitrary number of
             types of constituents.  For each type, three arguments must
             be provided, in this order:
@@ -338,6 +340,7 @@ def _read_root_file(
     tree = input_file['Jets']
     branches_to_read = []
     branches_to_read += branches_global_numerical.tolist()
+    branches_to_read += branches_global_categorical.tolist()
     for block in constituents_blocks:
         branches_to_read.append(block[0])
         branches_to_read.extend(itertools.chain(block[1], block[2]))
@@ -346,6 +349,8 @@ def _read_root_file(
     results = []
     for branch in branches_global_numerical:
         results.append(data[branch].astype(np.float32))
+    for branch in branches_global_categorical:
+        results.append(data[branch].astype(np.int32))
 
     for block in constituents_blocks:
         results.append(data[block[0]].astype(np.int32))
@@ -372,6 +377,7 @@ def _read_root_file_wrapper(
         Dictionary that maps branch names to the corresponding tensors.
         Shapes of output tensors (parentheses denote ragged dimensions):
         - global numeric: (BATCH, 1),
+        - global categorical: (BATCH,),
         - per-constituent numeric: (BATCH, (None), 1),
         - per-constituent categorical: (BATCH, (None)).
     """
@@ -385,9 +391,13 @@ def _read_root_file_wrapper(
     # given to this function, include pt_gen, which is needed to
     # compute the regression target.
     branches_num = ['pt_gen'] + features.get_numerical('global')
-    inputs.append(branches_num)
-    output_types += [tf.float32] * len(branches_num)
-    output_names += branches_num
+    branches_cat = features.get_categorical('global')
+    inputs.extend([branches_num, branches_cat])
+    output_types.extend(
+        [tf.float32] * len(branches_num)
+        + [tf.int32] * len(branches_cat)
+    )
+    output_names += branches_num + branches_cat
     all_numerical += branches_num
 
     # Features of constituents
