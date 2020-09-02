@@ -21,7 +21,6 @@ features:
     categorical: [ne_id]
   sv:
     numerical: [sv_mass, sv_pt, sv_distance, sv_significance, sv_num_tracks]
-    categorical: []
 
 model:
   ch:

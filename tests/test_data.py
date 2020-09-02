@@ -47,13 +47,13 @@ def test_read_root_wrapper():
     branches_global = ['pt', 'eta', 'mass', 'rho']
     branches_ch_num = ['ch_pt', 'ch_eta', 'ch_lost_hits']
     branches_ch_cat = ['ch_id']
-    features = {
+    features = mljec.Features({
         'global': {'numerical': branches_global},
         'ch': {
             'numerical': branches_ch_num,
             'categorical': branches_ch_cat
         }
-    }
+    })
     result = tf.function(
         lambda path: mljec.data._read_root_file_wrapper(path, features),
         input_signature=[tf.TensorSpec((), dtype=tf.string)]
@@ -86,13 +86,13 @@ def test_dataset():
     branches_global = ['pt', 'eta', 'mass', 'rho']
     branches_ch_num = ['ch_pt', 'ch_eta', 'ch_lost_hits']
     branches_ch_cat = ['ch_id']
-    features = {
+    features = mljec.Features({
         'global': {'numerical': branches_global},
         'ch': {
             'numerical': branches_ch_num,
             'categorical': branches_ch_cat
         }
-    }
+    })
     batch_size = 5
     dataset = mljec.data._build_dataset(
         input_files, features, {}, batch_size=batch_size

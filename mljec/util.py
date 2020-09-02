@@ -1,5 +1,40 @@
+import copy
+from typing import List, Mapping
+
 from matplotlib import pyplot as plt
 import numpy as np
+
+
+class Features:
+    """Structured collection of names of input features."""
+
+    def __init__(self, config: Mapping):
+        """Initialize from configuration.
+
+        The mapping describing the features is supposed to be taken
+        directly from the master configuration.
+        """
+
+        self._config = copy.copy(config)
+        if 'global' not in self._config:
+            raise RuntimeError('Mandatory key "global" is missing.')
+        feature_types = {'numerical', 'categorical'}
+        for block in self._config.values():
+            for type_ in block:
+                if type_ not in feature_types:
+                    raise RuntimeError(f'Unknown feature type "{type_}".')
+            for type_ in feature_types:
+                if type_ not in block:
+                    block[type_] = []
+
+        self.constituent_types = set(self._config.keys())
+        self.constituent_types.remove('global')
+
+    def get_categorical(self, block: str) -> List[str]:
+        return self._config[block]['categorical']
+
+    def get_numerical(self, block: str) -> List[str]:
+        return self._config[block]['numerical']
 
 
 def plot_history(config, history, save_path, ylim=(None, None), zoom=False):

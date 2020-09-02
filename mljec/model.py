@@ -10,6 +10,7 @@ from tensorflow.keras.layers import (
 )
 
 from .data import MaybeRaggedTensor
+from .util import Features
 
 
 class Sum(keras.layers.Layer):
@@ -49,7 +50,7 @@ def build_model(
         model = keras.models.load_model(model_config)
         return model
 
-    features = config['features']
+    features = Features(config['features'])
     inputs_all = []
 
     # Constituents of different types
@@ -58,11 +59,11 @@ def build_model(
     outputs_constituents = []
     for constituent_type in constituent_types:
         inputs_numerical = keras.Input(
-            shape=(None, len(features[constituent_type]['numerical'])),
+            shape=(None, len(features.get_numerical(constituent_type))),
             ragged=True, name=f'{constituent_type}_numerical'
         )
         inputs_categorical = OrderedDict()
-        for feature in features[constituent_type]['categorical']:
+        for feature in features.get_categorical(constituent_type):
             inputs_categorical[feature] = keras.Input(
                 shape=(None,), ragged=True, name=feature
             )
@@ -77,7 +78,7 @@ def build_model(
 
     # Head
     inputs_global_numerical = keras.Input(
-        shape=(len(features['global']['numerical']),),
+        shape=(len(features.get_numerical('global')),),
         name='global_numerical'
     )
     inputs_all.append(inputs_global_numerical)

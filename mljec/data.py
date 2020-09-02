@@ -10,6 +10,8 @@ import tensorflow as tf
 import uproot
 import yaml
 
+from .util import Features
+
 
 MaybeRaggedTensor = Union[tf.Tensor, tf.RaggedTensor]
 
@@ -24,9 +26,9 @@ def build_datasets(
 
     Return:
         Metadata and the three datasets.  The metadata include  numbers
-        of examples in each set, a dictionary with names of input
-        features (as read from the configuration), and a dictionary with
-        cardinalities of categorical features.
+        of examples in each set, a Features object that provides names
+        of input features, and a dictionary with cardinalities of
+        categorical features.
     """
 
     data_config = config['data']
@@ -40,7 +42,7 @@ def build_datasets(
         for c in data_file_infos
     ]
 
-    features = config['features']
+    features = Features(config['features'])
     transforms, cardinalities = _create_transforms(
         os.path.join(data_config['location'], 'transform.yaml')
     )
@@ -74,7 +76,7 @@ def build_datasets(
 
 
 def _build_dataset(
-    paths: Iterable, features: Mapping,
+    paths: Iterable, features: Features,
     transforms: Mapping[str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]],
     repeat: bool = False, batch_size: int = 128,
     map_num_parallel: Union[int, None] = None
@@ -83,7 +85,7 @@ def _build_dataset(
 
     Args:
         paths:  Paths to files included in the dataset.
-        features:  Dictionary with names of input features.
+        features:  Input features.
         transforms:  Preprocessing operations to be applied to
             individual features.
         repeat:  Whether the dataset should be repeated.
@@ -250,7 +252,7 @@ def _find_splits(
 
 
 def _preprocess(
-    batch: Mapping[str, MaybeRaggedTensor], features: Mapping,
+    batch: Mapping[str, MaybeRaggedTensor], features: Features,
     transforms: Mapping[
         str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]] = {}
 ) -> Tuple[Dict[str, MaybeRaggedTensor], tf.Tensor]:
@@ -259,7 +261,7 @@ def _preprocess(
     Args:
         batch:  Tensors representing individual features in the
             current batch.
-        features:  Dictionary with names of input features.
+        features:  Input features.
         transforms:  Dictionary of transformation operations.
 
     Return:
@@ -278,25 +280,23 @@ def _preprocess(
             batch[feature_name] = transform(column)
 
     inputs = {}
-    constituent_types = list(features.keys())
-    constituent_types.remove('global')
 
     # Concatenate numerical features into blocks
     block = tf.concat(
-        [batch[name] for name in features['global']['numerical']],
+        [batch[name] for name in features.get_numerical('global')],
         axis=1, name='global_numerical'
     )
     inputs['global_numerical'] = block
-    for constituent_type in constituent_types:
+    for constituent_type in features.constituent_types:
         block = tf.concat(
-            [batch[name] for name in features[constituent_type]['numerical']],
+            [batch[name] for name in features.get_numerical(constituent_type)],
             axis=2, name=f'{constituent_type}_numerical'
         )
         inputs[f'{constituent_type}_numerical'] = block
 
     # Propagate categorical features directly
-    for constituent_type in constituent_types:
-        for name in features[constituent_type]['categorical']:
+    for constituent_type in features.constituent_types:
+        for name in features.get_categorical(constituent_type):
             inputs[name] = batch[name]
 
     return (inputs, target)
@@ -357,7 +357,7 @@ def _read_root_file(
 
 
 def _read_root_file_wrapper(
-    path: str, features: Mapping
+    path: str, features: Features
 ) -> Dict[str, MaybeRaggedTensor]:
     """Wrapper around _read_root_file.
 
@@ -366,7 +366,7 @@ def _read_root_file_wrapper(
 
     Args:
         path:  Tensor representing path to the file to read.
-        features:  Dictionary with names of input features.
+        features:  Input features.
 
     Return:
         Dictionary that maps branch names to the corresponding tensors.
@@ -384,18 +384,16 @@ def _read_root_file_wrapper(
     # Global features.  In addition to those specified in the mapping
     # given to this function, include pt_gen, which is needed to
     # compute the regression target.
-    branches_num = ['pt_gen'] + features['global']['numerical']
+    branches_num = ['pt_gen'] + features.get_numerical('global')
     inputs.append(branches_num)
     output_types += [tf.float32] * len(branches_num)
     output_names += branches_num
     all_numerical += branches_num
 
     # Features of constituents
-    block_names = list(features.keys())
-    block_names.remove('global')
-    for block in block_names:
-        branches_num = features[block]['numerical']
-        branches_cat = features[block]['categorical']
+    for block in features.constituent_types:
+        branches_num = features.get_numerical(block)
+        branches_cat = features.get_categorical(block)
         inputs.extend([f'{block}_size', branches_num, branches_cat])
         output_types.extend(
             [tf.int32]
@@ -413,10 +411,10 @@ def _read_root_file_wrapper(
     for values in data.values():
         values.set_shape((None,))
 
-    for block in block_names:
+    for block in features.constituent_types:
         size = data.pop(f'{block}_size')
         for branch in itertools.chain(
-            features[block]['numerical'], features[block]['categorical']
+            features.get_numerical(block), features.get_categorical(block)
         ):
             data[branch] = tf.RaggedTensor.from_row_lengths(
                 values=data[branch], row_lengths=size
