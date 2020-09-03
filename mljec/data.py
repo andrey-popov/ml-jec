@@ -97,26 +97,26 @@ def _build_dataset(
         TensorFlow Dataset.
     """
 
-    # Read input ROOT files one at a time (with prefetching)
+    # Read input ROOT files, one at a time
     dataset = tf.data.Dataset.from_tensor_slices(paths)
+    if repeat:
+        dataset = dataset.repeat()
     dataset = dataset.map(
         lambda path: _read_root_file_wrapper(path, features)
     )
-    dataset = dataset.prefetch(1)
 
     dataset = dataset.map(
         lambda batch: _create_synthetic_features(batch, features),
-        num_parallel_calls=map_num_parallel
+        num_parallel_calls=map_num_parallel, deterministic=False
     )
     dataset = dataset.map(
         lambda batch: _preprocess(batch, features, transforms),
-        num_parallel_calls=map_num_parallel
+        num_parallel_calls=map_num_parallel, deterministic=False
     )
 
-    dataset = dataset.unbatch()
-    if repeat:
-        dataset = dataset.repeat()
-    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+    dataset = dataset.unbatch().batch(batch_size)
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
 
 

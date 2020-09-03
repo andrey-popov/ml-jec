@@ -101,7 +101,6 @@ if __name__ == '__main__':
         config = yaml.safe_load(f)
 
     metadata, train_dataset, val_dataset, test_dataset = build_datasets(config)
-    train_dataset = train_dataset.prefetch(tf.data.experimental.AUTOTUNE)
     val_dataset = val_dataset.cache()
 
     model = build_model(config, metadata['cardinalities'])
