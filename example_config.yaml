@@ -1,0 +1,76 @@
+run:
+  name: baseline
+  storage: gs://rainfinder-mljec-200805/results
+
+data:
+  location: gs://rainfinder-mljec-200805/data
+  split: [100, 2, -1]
+  batch_size: 1024
+
+features:
+  global:
+    numerical: [pt, eta, phi, mass, area, num_pv, rho]
+    numerical_branches: [pt, eta, phi, mass, area, num_pv, rho, pt_gen]
+  ch:
+    numerical: [
+      ch_pt, ch_eta, ch_phi, ch_dxy, ch_dxy_significance, ch_dz,
+      ch_num_hits, ch_num_pixel_hits, ch_lost_hits, ch_norm_chi2,
+      ch_rel_pt, ch_deta, ch_dphi, ch_dr
+    ]
+    numerical_branches: [
+      ch_pt, ch_eta, ch_phi, ch_dxy, ch_dxy_significance, ch_dz,
+      ch_num_hits, ch_num_pixel_hits, ch_lost_hits, ch_norm_chi2
+    ]
+    categorical: [ch_id, ch_pv_ass]
+  ne:
+    numerical: [
+      ne_pt, ne_eta, ne_phi, ne_hcal_frac,
+      ne_rel_pt, ne_deta, ne_dphi, ne_dr
+    ]
+    numerical_branches: [ne_pt, ne_eta, ne_phi, ne_hcal_frac]
+    categorical: [ne_id]
+  sv:
+    numerical: [
+      sv_mass, sv_pt, sv_distance, sv_significance, sv_num_tracks,
+      sv_rel_pt
+    ]
+    numerical_branches: [
+      sv_mass, sv_pt, sv_distance, sv_significance, sv_num_tracks
+    ]
+
+model:
+  ch:
+    embeddings: {
+      ch_id: 3,
+      ch_pv_ass: 2
+    }
+    type: mlp
+    num_units: [30, 30, 30]
+  ne:
+    embeddings: {
+      ne_id: 3
+    }
+    type: mlp
+    num_units: [10, 10]
+  sv:
+    embeddings: {}
+    type: mlp
+    num_units: [10, 10]
+  head:
+    type: resnet
+    num_units: [500, 500, 200, 200, 50, 50]
+
+loss: mae
+
+train:
+  steps_per_epoch: 1000
+  learning_rate: 5.e-4
+  reduce_lr_on_plateau:
+    factor: 0.2
+    patience: 10
+    min_delta: &min_delta 5.e-5
+  early_stopping:
+    patience: 15
+    min_delta: *min_delta
+
+predict: true
