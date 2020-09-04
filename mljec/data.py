@@ -97,12 +97,15 @@ def _build_dataset(
         TensorFlow Dataset.
     """
 
-    # Read input ROOT files, one at a time
+    # Read input ROOT files. Despite the reading is done in a Python
+    # function, run it in multiple threads because uproot releases the
+    # GIL for some operations.
     dataset = tf.data.Dataset.from_tensor_slices(paths)
     if repeat:
         dataset = dataset.repeat()
     dataset = dataset.map(
-        lambda path: _read_root_file_wrapper(path, features)
+        lambda path: _read_root_file_wrapper(path, features),
+        num_parallel_calls=map_num_parallel, deterministic=False
     )
 
     dataset = dataset.map(
