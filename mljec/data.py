@@ -1,9 +1,11 @@
 import copy
 import itertools
 import os
+import subprocess
 from typing import (
     Callable, Dict, Mapping, Iterable, List, Sequence, Tuple, Union
 )
+from uuid import uuid4
 
 import numpy as np
 import tensorflow as tf
@@ -58,19 +60,16 @@ def build_datasets(
         if set_label == 'train':
             repeat = True
             batch_size = data_config['batch_size']
-            map_num_parallel = tf.data.experimental.AUTOTUNE
         else:
             repeat = False
             batch_size = 32768
-            map_num_parallel = None
 
         metadata['counts'][set_label] = sum(
             c['count'] for c in data_file_infos[file_range[0]:file_range[1]]
         )
         datasets[set_label] = _build_dataset(
             data_files[file_range[0]:file_range[1]], features, transforms,
-            repeat=repeat, batch_size=batch_size,
-            map_num_parallel=map_num_parallel
+            repeat=repeat, batch_size=batch_size
         )
     return metadata, datasets['train'], datasets['val'], datasets['test']
 
@@ -78,8 +77,7 @@ def build_datasets(
 def _build_dataset(
     paths: Iterable, features: Features,
     transforms: Mapping[str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]],
-    repeat: bool = False, batch_size: int = 128,
-    map_num_parallel: Union[int, None] = None
+    repeat: bool = False, batch_size: int = 128
 ) -> tf.data.Dataset:
     """Build a dataset.
 
@@ -90,34 +88,32 @@ def _build_dataset(
             individual features.
         repeat:  Whether the dataset should be repeated.
         batch_size:  Batch size.
-        map_num_parallel:  Number of parallel calls for Dataset.map.
-            Directly forwarded to that method.
 
     Return:
         TensorFlow Dataset.
     """
 
-    # Read input ROOT files. Despite the reading is done in a Python
+    # Read input ROOT files. Although the reading is done in a Python
     # function, run it in multiple threads because uproot releases the
-    # GIL for some operations.
+    # GIL for some operations.  When reading files from a Google Cloud
+    # bucket, this will also download them in parallel.
     dataset = tf.data.Dataset.from_tensor_slices(paths)
     if repeat:
         dataset = dataset.repeat()
     dataset = dataset.map(
         lambda path: _read_root_file_wrapper(path, features),
-        num_parallel_calls=map_num_parallel, deterministic=False
+        num_parallel_calls=tf.data.experimental.AUTOTUNE, deterministic=False
     )
 
     dataset = dataset.map(
         lambda batch: _create_synthetic_features(batch, features),
-        num_parallel_calls=map_num_parallel, deterministic=False
+        num_parallel_calls=tf.data.experimental.AUTOTUNE, deterministic=False
     )
     dataset = dataset.map(
         lambda batch: _preprocess(batch, features, transforms),
-        num_parallel_calls=map_num_parallel, deterministic=False
+        num_parallel_calls=tf.data.experimental.AUTOTUNE, deterministic=False
     )
 
-    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     dataset = dataset.unbatch().batch(batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
@@ -388,6 +384,9 @@ def _read_root_file(
 ) -> List[np.ndarray]:
     """Read a single ROOT file.
 
+    The file can be available locally or from a Google Cloud bucket.  In
+    the latter case, download it, read, and then delete the local copy.
+
     Args:
         path:  Path the file.
         branches_global_numerical:  Names of branches with global
@@ -410,13 +409,24 @@ def _read_root_file(
         constituents are flattened.
     """
 
+    path = path.decode()
     assert len(constituents_args) % 3 == 0
     constituents_blocks = [
         constituents_args[i:i + 3]
         for i in range(0, len(constituents_args), 3)
     ]
 
-    input_file = uproot.open(path.decode())
+    if path.startswith('gs://'):
+        read_gcloud = True
+        local_path = f'input-file_{uuid4().hex}.root'
+        subprocess.run(
+            ['gsutil', '-q', 'cp', path, local_path], check=True
+        )
+        path = local_path
+    else:
+        read_gcloud = False
+
+    input_file = uproot.open(path)
     tree = input_file['Jets']
     branches_to_read = []
     branches_to_read += branches_global_numerical.tolist()
@@ -438,6 +448,9 @@ def _read_root_file(
             results.append(data[branch].astype(np.float32).flatten())
         for branch in block[2]:
             results.append(data[branch].astype(np.int32).flatten())
+
+    if read_gcloud:
+        os.remove(path)
     return results
 
 
