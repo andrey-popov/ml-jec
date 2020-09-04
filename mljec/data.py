@@ -62,7 +62,7 @@ def build_datasets(
             batch_size = data_config['batch_size']
         else:
             repeat = False
-            batch_size = 32768
+            batch_size = None
 
         metadata['counts'][set_label] = sum(
             c['count'] for c in data_file_infos[file_range[0]:file_range[1]]
@@ -77,7 +77,7 @@ def build_datasets(
 def _build_dataset(
     paths: Iterable, features: Features,
     transforms: Mapping[str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]],
-    repeat: bool = False, batch_size: int = 128
+    repeat: bool = False, batch_size: Union[int, None] = 128
 ) -> tf.data.Dataset:
     """Build a dataset.
 
@@ -87,7 +87,7 @@ def _build_dataset(
         transforms:  Preprocessing operations to be applied to
             individual features.
         repeat:  Whether the dataset should be repeated.
-        batch_size:  Batch size.
+        batch_size:  Batch size.  In None, use file-sized batches.
 
     Return:
         TensorFlow Dataset.
@@ -114,7 +114,8 @@ def _build_dataset(
         num_parallel_calls=tf.data.experimental.AUTOTUNE, deterministic=False
     )
 
-    dataset = dataset.unbatch().batch(batch_size)
+    if batch_size is not None:
+        dataset = dataset.unbatch().batch(batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
 
