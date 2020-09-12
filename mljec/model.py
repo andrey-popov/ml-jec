@@ -108,7 +108,7 @@ def build_model(
         inputs_head, model_config['head'], name_prefix='head_'
     )
 
-    outputs = Dense(1)(outputs)  # Output unit
+    outputs = Dense(1, name='head_dense_output')(outputs)  # Output unit
     model = keras.Model(inputs=inputs_all, outputs=outputs, name='full')
 
     if config['loss'] == 'huber':
