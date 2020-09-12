@@ -58,10 +58,8 @@ def build_datasets(
     datasets = {}
     for set_label, file_range in splits.items():
         if set_label == 'train':
-            repeat = True
             batch_size = data_config['batch_size']
         else:
-            repeat = False
             batch_size = None
 
         metadata['counts'][set_label] = sum(
@@ -69,7 +67,7 @@ def build_datasets(
         )
         datasets[set_label] = _build_dataset(
             data_files[file_range[0]:file_range[1]], features, transforms,
-            repeat=repeat, batch_size=batch_size
+            batch_size=batch_size
         )
     return metadata, datasets['train'], datasets['val'], datasets['test']
 
@@ -77,7 +75,7 @@ def build_datasets(
 def _build_dataset(
     paths: Iterable, features: Features,
     transforms: Mapping[str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]],
-    repeat: bool = False, batch_size: Union[int, None] = 128
+    batch_size: Union[int, None] = 128
 ) -> tf.data.Dataset:
     """Build a dataset.
 
@@ -86,7 +84,6 @@ def _build_dataset(
         features:  Input features.
         transforms:  Preprocessing operations to be applied to
             individual features.
-        repeat:  Whether the dataset should be repeated.
         batch_size:  Batch size.  In None, use file-sized batches.
 
     Return:
@@ -98,8 +95,6 @@ def _build_dataset(
     # GIL for some operations.  When reading files from a Google Cloud
     # bucket, this will also download them in parallel.
     dataset = tf.data.Dataset.from_tensor_slices(paths)
-    if repeat:
-        dataset = dataset.repeat()
     dataset = dataset.map(
         lambda path: _read_root_file_wrapper(path, features),
         num_parallel_calls=tf.data.experimental.AUTOTUNE, deterministic=False

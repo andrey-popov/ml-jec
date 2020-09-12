@@ -101,6 +101,12 @@ if __name__ == '__main__':
         config = yaml.safe_load(f)
 
     metadata, train_dataset, val_dataset, test_dataset = build_datasets(config)
+    if 'cache' in config['data']:
+        cache = config['data']['cache']
+        if cache is not False and cache is not None:
+            train_dataset = train_dataset.cache(cache)
+    train_dataset = train_dataset.repeat()
+    train_dataset = train_dataset.shuffle(100)
     val_dataset = val_dataset.cache()
 
     model = build_model(config, metadata['cardinalities'])
