@@ -126,7 +126,7 @@ def _build_dataset(
                     tf.math.less(target[0], target_range[1])
                 )
             )
-        dataset = dataset.batch(batch_size)
+        dataset = dataset.batch(batch_size, drop_remainder=True)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
 
