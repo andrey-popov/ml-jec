@@ -59,6 +59,11 @@ def build_datasets(
     for set_label, file_range in splits.items():
         if set_label == 'train':
             batch_size = data_config['batch_size']
+            batch_drop_remainder = True
+            target_range = (-1., 1.)
+        elif set_label == 'val':
+            batch_size = 100_000
+            batch_drop_remainder = False
             target_range = (-1., 1.)
         else:
             batch_size = None
@@ -69,7 +74,8 @@ def build_datasets(
         )
         datasets[set_label] = _build_dataset(
             data_files[file_range[0]:file_range[1]], features, transforms,
-            batch_size=batch_size, target_range=target_range
+            batch_size=batch_size, batch_drop_remainder=batch_drop_remainder,
+            target_range=target_range
         )
     return metadata, datasets['train'], datasets['val'], datasets['test']
 
@@ -77,7 +83,7 @@ def build_datasets(
 def _build_dataset(
     paths: Iterable, features: Features,
     transforms: Mapping[str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]],
-    batch_size: Union[int, None] = 128,
+    batch_size: Union[int, None] = 128, batch_drop_remainder: bool = False,
     target_range: Union[Tuple[float, float], None] = None
 ) -> tf.data.Dataset:
     """Build a dataset.
@@ -88,6 +94,8 @@ def _build_dataset(
         transforms:  Preprocessing operations to be applied to
             individual features.
         batch_size:  Batch size.  In None, use file-sized batches.
+        batch_drop_remainder:  Whether to drop remainder in batches.
+            Only used when batch_size is not None.
         target_range:  Filter out entries with targers outside of given
             range.  Only supported when batch_size is not None.
 
@@ -126,7 +134,9 @@ def _build_dataset(
                     tf.math.less(target[0], target_range[1])
                 )
             )
-        dataset = dataset.batch(batch_size, drop_remainder=True)
+        dataset = dataset.batch(
+            batch_size, drop_remainder=batch_drop_remainder
+        )
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
 
