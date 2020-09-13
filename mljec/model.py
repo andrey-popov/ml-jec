@@ -1,6 +1,6 @@
 import math
 import os
-from typing import List, Mapping, OrderedDict, Union
+from typing import Callable, List, Mapping, OrderedDict, Union
 
 import tensorflow as tf
 from tensorflow import keras
@@ -111,12 +111,7 @@ def build_model(
     outputs = Dense(1, name='head_dense_output')(outputs)  # Output unit
     model = keras.Model(inputs=inputs_all, outputs=outputs, name='full')
 
-    if config['loss'] == 'huber':
-        loss = keras.losses.Huber(math.log(2))
-    else:
-        loss = config['loss']
-
-    model.compile('adam', loss=loss)
+    model.compile('adam', loss=_create_loss(config['loss']))
     return model
 
 
@@ -349,3 +344,20 @@ def _apply_resnet(
         x = Activation('relu', name=name_prefix + 'activation_last')(x)
 
     return x
+
+
+def _create_loss(
+    loss_name: str
+) -> Callable[[tf.Tensor, tf.Tensor], tf.Tensor]:
+    """Create loss function."""
+
+    if loss_name not in {'mae'}:
+        raise RuntimeError(f'Loss {loss_name} is not implemented.')
+
+    def loss_fn(y_true, y_pred):
+        base_loss = tf.math.abs(y_pred - y_true)
+        # Skip jets with extreme values for the target
+        mask = tf.math.logical_and(y_true > -1., y_true < 1.)
+        return tf.math.reduce_mean(base_loss * tf.cast(mask, tf.float32))
+
+    return loss_fn

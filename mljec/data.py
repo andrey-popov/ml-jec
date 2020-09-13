@@ -60,22 +60,16 @@ def build_datasets(
         if set_label == 'train':
             batch_size = data_config['batch_size']
             batch_drop_remainder = True
-            target_range = (-1., 1.)
-        elif set_label == 'val':
-            batch_size = 100_000
-            batch_drop_remainder = False
-            target_range = (-1., 1.)
         else:
             batch_size = None
-            target_range = None
+            batch_drop_remainder = False
 
         metadata['counts'][set_label] = sum(
             c['count'] for c in data_file_infos[file_range[0]:file_range[1]]
         )
         datasets[set_label] = _build_dataset(
             data_files[file_range[0]:file_range[1]], features, transforms,
-            batch_size=batch_size, batch_drop_remainder=batch_drop_remainder,
-            target_range=target_range
+            batch_size=batch_size, batch_drop_remainder=batch_drop_remainder
         )
     return metadata, datasets['train'], datasets['val'], datasets['test']
 
@@ -83,8 +77,7 @@ def build_datasets(
 def _build_dataset(
     paths: Iterable, features: Features,
     transforms: Mapping[str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]],
-    batch_size: Union[int, None] = 128, batch_drop_remainder: bool = False,
-    target_range: Union[Tuple[float, float], None] = None
+    batch_size: Union[int, None] = 128, batch_drop_remainder: bool = False
 ) -> tf.data.Dataset:
     """Build a dataset.
 
@@ -96,15 +89,10 @@ def _build_dataset(
         batch_size:  Batch size.  In None, use file-sized batches.
         batch_drop_remainder:  Whether to drop remainder in batches.
             Only used when batch_size is not None.
-        target_range:  Filter out entries with targers outside of given
-            range.  Only supported when batch_size is not None.
 
     Return:
         TensorFlow Dataset.
     """
-
-    if target_range is not None and batch_size is None:
-        raise RuntimeError('Target range can only be given with rebatching.')
 
     # Read input ROOT files. Although the reading is done in a Python
     # function, run it in multiple threads because uproot releases the
@@ -126,15 +114,7 @@ def _build_dataset(
     )
 
     if batch_size is not None:
-        dataset = dataset.unbatch()
-        if target_range is not None:
-            dataset = dataset.filter(
-                lambda _, target: tf.math.logical_and(
-                    tf.math.greater(target[0], target_range[0]),
-                    tf.math.less(target[0], target_range[1])
-                )
-            )
-        dataset = dataset.batch(
+        dataset = dataset.unbatch().batch(
             batch_size, drop_remainder=batch_drop_remainder
         )
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
