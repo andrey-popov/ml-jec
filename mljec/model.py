@@ -8,6 +8,7 @@ from tensorflow.keras.layers import (
     Activation, Add, BatchNormalization, Concatenate, Dense, Dropout,
     Embedding, TimeDistributed
 )
+import tensorflow_addons as tfa
 
 from .data import MaybeRaggedTensor
 from .util import Features
@@ -111,7 +112,10 @@ def build_model(
     outputs = Dense(1, name='head_dense_output')(outputs)  # Output unit
     model = keras.Model(inputs=inputs_all, outputs=outputs, name='full')
 
-    model.compile('adam', loss=_create_loss(config['loss']))
+    model.compile(
+        optimizer=_create_optimizer(config.get('optimizer', None)),
+        loss=_create_loss(config['loss'])
+    )
     return model
 
 
@@ -361,3 +365,27 @@ def _create_loss(
         return tf.math.reduce_mean(base_loss * tf.cast(mask, tf.float32))
 
     return loss_fn
+
+
+def _create_optimizer(
+    config: Union[None, Mapping] = None
+) -> keras.optimizers.Optimizer:
+    """Construct an optimizer from configuration."""
+
+    if config is None:
+        return keras.optimizers.Adam()
+
+    algorithm = config['algorithm'].lower()
+    if algorithm == 'adam':
+        return keras.optimizers.Adam()
+    elif algorithm == 'sgd':
+        return keras.optimizers.SGD(
+            momentum=config.get('momentum', 0.),
+            nesterov=config.get('nesterov', False)
+        )
+    elif algorithm == 'radam':
+        return tfa.optimizers.RectifiedAdam()
+    else:
+        raise RuntimeError(
+            'Unsupported optimizer "{}".'.format(config['algorithm'])
+        )
