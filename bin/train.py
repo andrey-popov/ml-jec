@@ -6,13 +6,49 @@ import argparse
 import math
 import os
 import pickle
-from typing import Dict, List, Mapping
+from typing import Dict, List, Mapping, Sequence
 
 import numpy as np
 import tensorflow as tf
 import yaml
 
 from mljec import build_datasets, build_model, plot_history, summarize_model
+
+
+def create_piecewise_linear_schedule(
+    epochs: Sequence[int], learning_rate: Sequence[float]
+) -> tf.keras.callbacks.LearningRateScheduler:
+    """Create piecewise linear learning rate scheduler.
+
+    Args:
+        epochs:  Ordered sequence of zero-based epoch indices.
+        learning_rate:  Values of learning rate at each epoch specified
+            in the first argument.
+
+    Return:
+        Scheduler callback.
+    """
+
+    if any(epochs[i] >= epochs[i + 1] for i in range(len(epochs) - 1)):
+        raise RuntimeError('Sequence of epochs is not ordered.')
+    if len(epochs) != len(learning_rate):
+        raise RuntimeError(
+            'Mismatched numbers of epochs and values for learning rate.'
+        )
+    if len(epochs) < 2:
+        raise RuntimeError('Must provide at least two points.')
+
+    def schedule(epoch, _):
+        i = 0
+        while i < len(epochs) - 1 and epoch > epochs[i + 1]:
+            i += 1
+        frac = (epoch - epochs[i]) / (epochs[i + 1] - epochs[i])
+        return (
+            (learning_rate[i + 1] - learning_rate[i]) * frac
+            + learning_rate[i]
+        )
+
+    return tf.keras.callbacks.LearningRateScheduler(schedule)
 
 
 def train(
@@ -71,6 +107,21 @@ def train(
             patience=c['patience'], min_delta=c['min_delta'],
             verbose=1
         ))
+    if 'piecewise_linear_schedule' in config['train']:
+        for key in [
+            'max_epochs', 'learning_rate', 'reduce_lr_on_plateau',
+            'early_stopping'
+        ]:
+            if key in config['train']:
+                raise RuntimeError(
+                    f'Cannot use key "{key}" together with '
+                    '"piecewise_linear_schedule".'
+                )
+        c = config['train']['piecewise_linear_schedule']
+        callbacks.append(create_piecewise_linear_schedule(
+            c['epochs'], c['learning_rate']
+        ))
+        max_epochs=c['epochs'][-1] + 1
 
     history = model.fit(
         train_dataset, steps_per_epoch=steps_per_epoch, epochs=max_epochs,

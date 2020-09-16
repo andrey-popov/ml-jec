@@ -132,8 +132,9 @@ def plot_history(
         (i + 0.5) * freq for i in range(len(history['lr']) - 1)
         if history['lr'][i] != history['lr'][i + 1]
     ]
-    for x in lr_changes:
-        axes.axvline(x, ls='dashed', lw=0.8, c='gray')
+    if len(lr_changes) < 0.5 * len(x):
+        for x in lr_changes:
+            axes.axvline(x, ls='dashed', lw=0.8, c='gray')
     axes.set_ylim(ylim)
     axes.set_xlabel('Parameter updates')
     axes.set_ylabel('Loss')
