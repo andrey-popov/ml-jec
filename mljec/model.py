@@ -121,6 +121,17 @@ def build_model(
         optimizer=_create_optimizer(config.get('optimizer', None)),
         loss=_create_loss(config['loss'])
     )
+    if 'load_weights' in model_config:
+        # Normally, a saved model should be loaded
+        # keras.models.load_model at the beginning of thsi function.
+        # However, this is currently not supported for models that use
+        # ragged tensors [1].  As a workaround, construct the model anew
+        # and then load saved weights.  The path to weights would
+        # usually be "{model_directory}/variables/variables", with the
+        # ".index" file extension stripped off.  This doesn't restore
+        # the state of the optimizer.
+        # [1] https://github.com/tensorflow/tensorflow/issues/41034
+        model.load_weights(model_config['load_weights'])
     return model
 
 
