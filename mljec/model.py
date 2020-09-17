@@ -48,7 +48,12 @@ def build_model(
 
     model_config = config['model']
     if isinstance(model_config, str):
-        model = keras.models.load_model(model_config)
+        model = keras.models.load_model(
+            model_config, custom_objects={
+                'loss_fn': _create_loss(config['loss'])
+            }
+        )
+
         return model
 
     features = Features(config['features'])
