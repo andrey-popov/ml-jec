@@ -69,7 +69,8 @@ def build_datasets(
         )
         datasets[set_label] = _build_dataset(
             data_files[file_range[0]:file_range[1]], features, transforms,
-            batch_size=batch_size, batch_drop_remainder=batch_drop_remainder
+            batch_size=batch_size, batch_drop_remainder=batch_drop_remainder,
+            deterministic=(set_label == 'test')
         )
     return metadata, datasets['train'], datasets['val'], datasets['test']
 
@@ -77,7 +78,8 @@ def build_datasets(
 def _build_dataset(
     paths: Iterable, features: Features,
     transforms: Mapping[str, Callable[[MaybeRaggedTensor], MaybeRaggedTensor]],
-    batch_size: Union[int, None] = 128, batch_drop_remainder: bool = False
+    batch_size: Union[int, None] = 128, batch_drop_remainder: bool = False,
+    deterministic: bool = True
 ) -> tf.data.Dataset:
     """Build a dataset.
 
@@ -89,6 +91,7 @@ def _build_dataset(
         batch_size:  Batch size.  In None, use file-sized batches.
         batch_drop_remainder:  Whether to drop remainder in batches.
             Only used when batch_size is not None.
+        deterministic:  Whether to preserve the order of examples.
 
     Return:
         TensorFlow Dataset.
@@ -101,16 +104,19 @@ def _build_dataset(
     dataset = tf.data.Dataset.from_tensor_slices(paths)
     dataset = dataset.map(
         lambda path: _read_root_file_wrapper(path, features),
-        num_parallel_calls=tf.data.experimental.AUTOTUNE, deterministic=False
+        num_parallel_calls=tf.data.experimental.AUTOTUNE,
+        deterministic=deterministic
     )
 
     dataset = dataset.map(
         lambda batch: _create_synthetic_features(batch, features),
-        num_parallel_calls=tf.data.experimental.AUTOTUNE, deterministic=False
+        num_parallel_calls=tf.data.experimental.AUTOTUNE,
+        deterministic=deterministic
     )
     dataset = dataset.map(
         lambda batch: _preprocess(batch, features, transforms),
-        num_parallel_calls=tf.data.experimental.AUTOTUNE, deterministic=False
+        num_parallel_calls=tf.data.experimental.AUTOTUNE,
+        deterministic=deterministic
     )
 
     if batch_size is not None:
