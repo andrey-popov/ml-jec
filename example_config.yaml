@@ -1,5 +1,4 @@
 run:
-  name: baseline
   storage: gs://rainfinder-mljec-200805/results
 
 data:
@@ -44,33 +43,35 @@ model:
       ch_id: 3,
       ch_pv_ass: 2
     }
-    type: mlp
-    num_units: [30, 30, 30]
+    type: resnet
+    num_units: [100, 100, 100, 100]
   ne:
     embeddings: {
       ne_id: 3
     }
-    type: mlp
-    num_units: [10, 10]
+    type: resnet
+    num_units: [30, 30, 30, 30]
   sv:
     embeddings: {}
-    type: mlp
-    num_units: [10, 10]
+    type: resnet
+    num_units: [20, 20, 20, 20]
   head:
     type: resnet
-    num_units: [500, 500, 200, 200, 50, 50]
+    num_units: [300, 157, 300, 157, 300, 157, 20]
 
 loss: mae
 
 train:
   steps_per_epoch: 1000
-  learning_rate: 5.e-4
+  max_epochs: 200
+  learning_rate: 2.e-3
   reduce_lr_on_plateau:
     factor: 0.2
-    patience: 10
+    patience: 5
+    min_lr: 1.e-6
     min_delta: &min_delta 5.e-5
   early_stopping:
-    patience: 15
+    patience: 10
     min_delta: *min_delta
 
 predict: true
