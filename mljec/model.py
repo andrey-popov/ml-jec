@@ -60,8 +60,10 @@ def build_model(
     inputs_all = []
 
     # Constituents of different types
-    constituent_types = sorted(model_config.keys())  # Ensure order
-    constituent_types.remove('head')
+    constituent_types = [
+        key for key in sorted(model_config.keys())  # Ensure order
+        if key not in {'head', 'load_weights'}
+    ]
     outputs_constituents = []
     for constituent_type in constituent_types:
         inputs_numerical = keras.Input(
